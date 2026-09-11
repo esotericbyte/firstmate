@@ -52,6 +52,18 @@ This is generic across built-in adapters with an `answers` command, and the runn
 External process-event bindings intentionally expose no answer operation and cannot feed the captain-answer intake.
 `captain-hold-lifecycle` owns when a binding is required and what the keys must be.
 
+To let the captain clear held decisions in docstrap instead of in chat, export the questions into one of his own project documents and arm the answer reader:
+
+```sh
+bin/fm-procevent-docstrap.sh export <document-path> <payload.json>
+bin/fm-captain-hold.sh bind <source-id>
+bin/fm-procevent-docstrap.sh arm <document-path>
+```
+
+The destination path is a required argument with no default, and `arm` refuses until the source is bound, so the ordering rule above is enforced rather than remembered.
+You compose the payload, exactly as you compose a bearings board's: the script refuses a question that is not one interrogative sentence, one joining two askable things with "and", and one offering "A or B", but which questions are worth the captain's time and what order makes later ones moot stay yours.
+The adapter's header owns the payload schema, the private label-to-task record, the non-destructive read, and the opt-in context references; `captain-hold-lifecycle` still owns what an answer means.
+
 A configured remote secondmate reply source is armed and handled through `bin/fm-procevent-remote-reply.sh`.
 Its header owns exact commands, while the adapter owns cursor continuity, validated deduplicated status ingest, path-confined document fetch, acknowledgement, and re-arming after a good delta.
 A continuity break is escalated once and stays unarmed until an operator deliberately rebases it.
@@ -75,7 +87,7 @@ Eligibility is a firstmate judgment made BEFORE arming, because the scripts cann
 Never bind an action that is destructive, irreversible, or security-sensitive, an action needing captain approval or any gate decision, or an action whose right form depends on what the condition finds - those keep the existing check-fires-then-firstmate-decides flow, for which a plain custom check or another adapter stays correct.
 When in doubt, arm only the condition half as an ordinary check and keep the action as a wake-time decision.
 
-`bin/fm-procevent.sh --help`, `bin/fm-procevent-lavish.sh --help`, `bin/fm-procevent-when.sh --help`, `bin/fm-procevent-quota.sh --help`, and `bin/fm-procevent-remote-reply.sh --help` own the exact commands and flags.
+`bin/fm-procevent.sh --help`, `bin/fm-procevent-lavish.sh --help`, `bin/fm-procevent-when.sh --help`, `bin/fm-procevent-quota.sh --help`, `bin/fm-procevent-docstrap.sh --help`, and `bin/fm-procevent-remote-reply.sh --help` own the exact commands and flags.
 
 An explicitly enabled external adapter registers through `bin/fm-procevent.sh register-extension`, never through a package-discovered script or package-supplied argv.
 [`docs/configuration.md`](../../../docs/configuration.md#trusted-external-process-event-adapters-configextensionsd) owns setup and [`docs/extension-bindings.md`](../../../docs/extension-bindings.md) owns the narrow trusted-code and untrusted-evidence boundary.
