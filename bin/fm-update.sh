@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Self-update a running firstmate and its secondmates to the latest origin.
 #
-# Mechanical half of the /updatefirstmate skill. Fast-forwards the running
-# firstmate repo's default branch from origin, then fast-forwards every
+# Mechanical half of the /updatefirstmate skill. On a FORK home it first advances
+# origin's default branch from upstream (see "fork upstream sync" below), so that
+# origin genuinely carries the latest firstmate before anything pulls from it.
+# It then fast-forwards the running firstmate repo's default branch from origin,
+# and then fast-forwards every
 # registered secondmate home. Local homes are treehouse worktrees or standalone
 # clones; remote routes update their configured code root on that host and then
 # fast-forward the persistent home to that root. FAST-FORWARD ONLY, exactly like
@@ -20,10 +23,38 @@
 # the same library drives local and remote parent-targeted secondmate sync, so
 # there is one ff implementation, not several.
 #
+# --- fork upstream sync ----------------------------------------------------
+# A home whose firstmate repo is a fork has TWO remotes: origin (the fork) and
+# upstream (the repo it was forked from). A fork does not advance on its own, so
+# pulling from origin alone delivers nothing new no matter how far upstream has
+# moved. The fork condition is DETECTED, never assumed: a home with no upstream
+# remote is the ordinary non-fork case and takes this path not at all - no extra
+# command, no extra output, no new failure mode.
+#
+# The sync runs `gh repo sync <origin-slug> --source <upstream-slug> --branch
+# <default>`, which advances the fork's branch on the forge itself, before the
+# fetch below. That mechanism was chosen over hand-rolled ref surgery because it
+# is the supported operation for exactly this, it is FAST-FORWARD ONLY unless
+# --force is passed (which nothing here ever passes), it needs no local push and
+# never touches this checkout, and its only write target is the fork. The
+# upstream remote is a read-only source on every path here; its push URL is
+# deliberately unusable and nothing below ever pushes to it.
+#
+# Every failure - no gh, no GitHub authentication, an unreachable or unnameable
+# remote, or a fork that has DIVERGED from upstream - is reported on its own
+# status line and in the `upstream-sync:` summary line, and never resolved by a
+# merge or a force. All of them warn and continue rather than aborting: the run
+# still has honest work to do (whatever origin itself carries, plus the whole
+# secondmate fleet), and nothing is left half-advanced, while the reported
+# failure plus the summary line keep the caller from reading the pass as a clean
+# update. A divergence is named, not fixed.
+#
 # It does NOT re-read AGENTS.md or nudge secondmates itself - those are LLM /
 # tmux actions the skill performs. The script's job is the safe git mechanics
 # plus a parseable summary telling the caller what to do next:
 #   - one status line per target (updated/already current/skipped)
+#   - upstream-sync: synced|current|failed  (fork homes ONLY; absent entirely on
+#     a non-fork home, so its output is unchanged)
 #   - reread-firstmate: yes|no    (did the running firstmate's instructions change)
 #   - restart-secondmates: fm-<id>...|none (every live secondmate this pass left
 #     on origin's tip - advanced OR already there - whose recorded runtime can
@@ -73,6 +104,108 @@ if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   exit 0
 fi
 [ $# -eq 0 ] || { usage; exit 1; }
+
+# --- fork upstream sync ----------------------------------------------------
+# Header owns why this exists and why every failure warns rather than aborts.
+
+# Echo the owner/repo slug a GitHub remote URL names, or fail. Accepts the https,
+# ssh, and scp-style spellings and rejects anything that is not a plain
+# owner/repo on github.com, so an unnameable remote becomes a reported failure
+# rather than a guessed argument.
+github_slug() {  # <remote-url>
+  local url=$1 path
+  case "$url" in
+    *github.com/*) path=${url#*github.com/} ;;
+    *github.com:*) path=${url#*github.com:} ;;
+    *) return 1 ;;
+  esac
+  path=${path%/}
+  path=${path%.git}
+  case "$path" in
+    */*/*|*' '*|/*|*/) return 1 ;;
+    */*) ;;
+    *) return 1 ;;
+  esac
+  [ -n "${path%%/*}" ] && [ -n "${path#*/}" ] || return 1
+  printf '%s\n' "$path"
+}
+
+# Echo the owner/repo slug one remote names. Reads the CONFIGURED url first,
+# because that is the repository's identity, and falls back to the resolved one
+# so a home that reaches GitHub through an insteadOf rewrite is still nameable.
+remote_slug() {  # <remote-name>
+  local remote=$1 url
+  url=$(git -C "$FM_ROOT" config --get "remote.$remote.url" 2>/dev/null) || url=""
+  if [ -n "$url" ] && github_slug "$url"; then
+    return 0
+  fi
+  url=$(git -C "$FM_ROOT" remote get-url "$remote" 2>/dev/null) || return 1
+  [ -n "$url" ] || return 1
+  github_slug "$url"
+}
+
+# Echo the configured url one remote names, for reporting.
+remote_url() {  # <remote-name>
+  git -C "$FM_ROOT" config --get "remote.$1.url" 2>/dev/null \
+    || git -C "$FM_ROOT" remote get-url "$1" 2>/dev/null
+}
+
+# Empty on a non-fork home, which is what keeps its output unchanged.
+upstream_sync=""
+
+upstream_sync_failed() {  # <reason>
+  upstream_sync="failed"
+  echo "upstream sync: failed: $1"
+}
+
+# Advance origin's default branch from upstream when this home is a fork.
+sync_fork_from_upstream() {
+  local upstream_slug origin_slug default out
+  git -C "$FM_ROOT" remote get-url upstream >/dev/null 2>&1 || return 0
+
+  default=$(default_branch "$FM_ROOT") || {
+    upstream_sync_failed "cannot determine the default branch"
+    return 0
+  }
+  git -C "$FM_ROOT" remote get-url origin >/dev/null 2>&1 || {
+    upstream_sync_failed "no origin remote to sync"
+    return 0
+  }
+  origin_slug=$(remote_slug origin) || {
+    upstream_sync_failed "origin is not a GitHub repository this can name: $(remote_url origin)"
+    return 0
+  }
+  upstream_slug=$(remote_slug upstream) || {
+    upstream_sync_failed "upstream is not a GitHub repository this can name: $(remote_url upstream)"
+    return 0
+  }
+  command -v gh >/dev/null 2>&1 || {
+    upstream_sync_failed "gh is not installed, so $origin_slug cannot be synced from $upstream_slug"
+    return 0
+  }
+  gh auth status >/dev/null 2>&1 || {
+    upstream_sync_failed "not authenticated to GitHub, so $origin_slug cannot be synced from $upstream_slug"
+    return 0
+  }
+
+  if ! out=$(gh repo sync "$origin_slug" --source "$upstream_slug" --branch "$default" 2>&1); then
+    if printf '%s\n' "$out" | grep -qiE 'fast.?forward|diverg'; then
+      upstream_sync_failed "$origin_slug $default has diverged from $upstream_slug $default and was left untouched: $(first_line "$out")"
+    else
+      upstream_sync_failed "$origin_slug could not be synced from $upstream_slug: $(first_line "$out")"
+    fi
+    return 0
+  fi
+  if printf '%s\n' "$out" | grep -qi 'up to date'; then
+    upstream_sync="current"
+    echo "upstream sync: origin $default already current with $upstream_slug"
+  else
+    upstream_sync="synced"
+    echo "upstream sync: origin $default synced from $upstream_slug"
+  fi
+}
+
+sync_fork_from_upstream
 
 # --- main firstmate repo ---------------------------------------------------
 
@@ -210,6 +343,7 @@ fi
 # two lines below are disjoint by construction: no mate is ever restarted and
 # then also steered about the instructions it just relaunched on.
 
+[ -z "$upstream_sync" ] || echo "upstream-sync: $upstream_sync"
 echo "reread-firstmate: $reread_firstmate"
 echo "restart-secondmates:${FF_RESTART_WINDOWS:- none}"
 echo "nudge-secondmates:${FF_STEER_WINDOWS:- none}"

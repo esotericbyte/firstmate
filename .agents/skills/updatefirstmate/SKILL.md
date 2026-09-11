@@ -39,8 +39,9 @@ This touches only the firstmate repo and its own worktrees, never anything under
    ```sh
    bin/fm-update.sh
    ```
-   It fast-forwards this firstmate repo's default branch from origin, then updates every registered local or remote secondmate home through its placement-specific guarded path.
-   It prints one status line per target (`updated <old>..<new>` / `already current` / `skipped: <reason>`), followed by three action lines that tell you exactly what to do next:
+   On a fork home it first advances origin from upstream, so the pull below actually delivers upstream's work; it fast-forwards this firstmate repo's default branch from origin, then updates every registered local or remote secondmate home through its placement-specific guarded path.
+   It prints one status line per target (`updated <old>..<new>` / `already current` / `skipped: <reason>`), followed by the action lines that tell you exactly what to do next:
+   - `upstream-sync: synced|current|failed` - fork homes only, and absent entirely on a home that is not a fork
    - `reread-firstmate: yes|no`
    - `restart-secondmates: fm-<id>...|none`
    - `nudge-secondmates: fm-<id>...|none`
@@ -87,6 +88,7 @@ This touches only the firstmate repo and its own worktrees, never anything under
    Summarize what landed under `AGENTS.md` section 9 without firstmate's internal vocabulary: which parts of the fleet are now on the latest, and which were left as-is and why.
    For example: "Captain, firstmate and both second mates are now on the latest."
    Say plainly when a mate got the message rather than a clean reload, and why - never let a partial reload read as a full one.
+   When the updater printed `upstream-sync: failed`, say plainly that this copy did not pick up the newest shared work and why, and never let that pass read as fully up to date; its status line carries the reason, including a fork that has diverged from what it was forked from, which is left untouched for the captain to decide.
    Surface any skipped target whose reason needs the captain's attention - for instance a home with its own un-landed changes (diverged) or local edits (dirty), which were left untouched on purpose.
 
 ## Safety
@@ -94,6 +96,9 @@ This touches only the firstmate repo and its own worktrees, never anything under
 - **Fast-forward only.**
   A target that has diverged, is dirty, is offline, or is on a non-default branch is skipped and reported, never forced or stashed.
   Nothing with unlanded work is ever discarded - this is prime directive #3.
+- **A fork is advanced from what it was forked from, never the other way round.**
+  The sync is fast-forward only, its only write target is this captain's own fork, and nothing writes to the repository the fork came from.
+  A fork that cannot be advanced without a merge or a force is reported and left alone.
 - **Only the firstmate repo and its worktrees** are touched, never `projects/`.
   It is the same sanctioned self-write as the fleet sync.
 - **Nothing with work in it is disrupted.**

@@ -23,6 +23,11 @@
 #   - Secondmate homes resolve from both state/<id>.meta and the
 #     data/secondmates.md registry, deduped, and the firstmate repo is never
 #     re-processed as one of its own secondmates.
+#   - A FORK home (origin plus upstream) advances origin from upstream before it
+#     pulls, so one update actually delivers upstream's commits; a home with no
+#     upstream remote is untouched by that step and prints nothing new; and a
+#     failing sync is reported rather than presented as a clean update, never
+#     resolved by a force or a merge and never pushed to upstream.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -129,6 +134,77 @@ bump_origin() {
   git -C "$w/seed" add -A
   git -C "$w/seed" commit -qm "bump-$mode"
   git -C "$w/seed" push -q origin main
+}
+
+# Turn a world into a FORK world: a second bare repo standing in for upstream,
+# github.com remote URLs on the firstmate repo (so the updater can name both
+# slugs) rewritten back to the local bare repos with insteadOf (so git still
+# talks to them without a network), and a fake gh standing in for the forge.
+#
+# The fake gh answers the two subcommands the updater uses. `repo sync` performs
+# the forge-side effect for real - a fast-forward-only fetch of upstream's branch
+# into the bare origin - so the assertions downstream exercise the whole path
+# rather than a canned string. It records every invocation so a test can prove
+# what was and was not asked for, refuses --force outright, and honours two flag
+# files: gh-unauthenticated makes `auth status` fail, and gh-diverged makes the
+# sync fail the way the forge refuses a fork that cannot be fast-forwarded.
+make_fork() {
+  local w=$1
+  git init -q --bare "$w/upstream.git"
+  git -C "$w/upstream.git" symbolic-ref HEAD refs/heads/main
+  git clone -q "$w/origin.git" "$w/upseed"
+  git -C "$w/upseed" push -q "$w/upstream.git" main
+  printf '%s\n' "$w" > "$w/fake/world"
+
+  git -C "$w/main" remote set-url origin https://github.com/fmtest/fork.git
+  git -C "$w/main" remote add upstream https://github.com/fmtest/up.git
+  git -C "$w/main" config --local "url.$w/origin.git.insteadOf" https://github.com/fmtest/fork.git
+  git -C "$w/main" config --local "url.$w/upstream.git.insteadOf" https://github.com/fmtest/up.git
+
+  cat > "$w/fakebin/gh" <<'SH'
+#!/usr/bin/env bash
+set -u
+world=$(cat "$FM_FAKE_DIR/world")
+printf '%s\n' "$*" >> "$FM_FAKE_DIR/gh-calls"
+case "${1:-} ${2:-}" in
+  "auth status")
+    if [ -e "$FM_FAKE_DIR/gh-unauthenticated" ]; then
+      echo "You are not logged into any GitHub hosts." >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  "repo sync")
+    for arg in "$@"; do
+      if [ "$arg" = "--force" ]; then
+        echo "fake gh: --force must never be passed" >&2
+        exit 99
+      fi
+    done
+    if [ -e "$FM_FAKE_DIR/gh-diverged" ]; then
+      echo "can't sync because there are diverging changes; specify --force to overwrite" >&2
+      exit 1
+    fi
+    git -C "$world/origin.git" fetch -q "$world/upstream.git" main:main || exit 1
+    echo 'Synced the "fmtest:main" branch from "fmtest/up:main"'
+    exit 0
+    ;;
+esac
+echo "fake gh: unexpected invocation: $*" >&2
+exit 90
+SH
+  chmod +x "$w/fakebin/gh"
+}
+
+# Advance upstream (not origin) by one commit that rewrites AGENTS.md, so the
+# delivered content is identifiable at the end of the run.
+bump_upstream() {
+  local w=$1
+  git -C "$w/upseed" pull -q "$w/upstream.git" main >/dev/null 2>&1 || true
+  printf 'from-upstream\n' > "$w/upseed/AGENTS.md"
+  git -C "$w/upseed" add -A
+  git -C "$w/upseed" commit -qm bump-upstream
+  git -C "$w/upseed" push -q "$w/upstream.git" main
 }
 
 run_update() {
@@ -471,6 +547,100 @@ test_unsafe_secondmate_home_skipped_before_git_update() {
   pass "T11 unsafe secondmate home is not fast-forwarded"
 }
 
+# --- T12: a fork home syncs from upstream, then fast-forwards --------------
+# The regression this closes: origin is the fork, a fork does not advance on its
+# own, so before this the pass reported success and delivered nothing while
+# upstream ran ahead.
+test_fork_syncs_from_upstream_then_fast_forwards() {
+  local w out upstream_before
+  w=$(new_world t12)
+  make_fork "$w"
+  bump_upstream "$w"
+  upstream_before=$(git -C "$w/upstream.git" rev-parse main)
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "upstream sync: origin main synced from fmtest/up" "the fork was not synced from upstream"
+  assert_contains "$out" "upstream-sync: synced" "the summary must report the sync"
+  assert_contains "$out" "firstmate: updated " "the firstmate repo must advance onto the synced commit"
+  assert_contains "$out" "reread-firstmate: yes" "upstream's AGENTS.md change must trigger the reread"
+  # The point of the whole change: upstream's content is in the local checkout
+  # after ONE update.
+  [ "$(git -C "$w/main" show HEAD:AGENTS.md)" = "from-upstream" ] \
+    || fail "upstream's commit did not reach the firstmate checkout"
+  # Nothing was pushed to upstream, and no force was ever requested.
+  [ "$(git -C "$w/upstream.git" rev-parse main)" = "$upstream_before" ] \
+    || fail "upstream was written to"
+  assert_not_contains "$(cat "$w/fake/gh-calls")" "--force" "the sync must never force"
+  assert_contains "$(cat "$w/fake/gh-calls")" "repo sync fmtest/fork --source fmtest/up --branch main" \
+    "the sync destination must be the fork and the source must be upstream"
+  pass "T12 a fork home syncs origin from upstream and lands the upstream commit in one update"
+}
+
+# --- T13: a non-fork home is unchanged -------------------------------------
+test_non_fork_home_is_unchanged() {
+  local w out
+  w=$(new_world t13)
+  add_sm "$w" sm1
+  bump_origin "$w" instr
+
+  out=$(run_update "$w")
+
+  assert_not_contains "$out" "upstream" "a home with no upstream remote must print nothing about one"
+  assert_contains "$out" "firstmate: updated " "the ordinary origin fast-forward must still happen"
+  assert_contains "$out" "reread-firstmate: yes" "the ordinary summary must be unchanged"
+  assert_contains "$out" "restart-secondmates: fm-sm1" "the ordinary summary must be unchanged"
+  pass "T13 a home with no upstream remote behaves exactly as before"
+}
+
+# --- T14: a diverged fork is named, never merged or forced -----------------
+test_diverged_fork_is_reported_not_forced() {
+  local w out origin_before
+  w=$(new_world t14)
+  make_fork "$w"
+  bump_upstream "$w"
+  : > "$w/fake/gh-diverged"
+  origin_before=$(git -C "$w/origin.git" rev-parse main)
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "upstream sync: failed: fmtest/fork main has diverged from fmtest/up main" \
+    "a diverged fork must be named plainly"
+  assert_contains "$out" "upstream-sync: failed" \
+    "a failed sync must never be summarised as a clean update"
+  [ "$(git -C "$w/origin.git" rev-parse main)" = "$origin_before" ] \
+    || fail "the diverged fork was advanced anyway"
+  [ "$(git -C "$w/main" show HEAD:AGENTS.md)" = "v1" ] \
+    || fail "upstream content landed despite the refused sync"
+  # The rest of the pass still runs against whatever origin itself carries.
+  assert_contains "$out" "firstmate: already current" "the origin fast-forward must still be attempted"
+  pass "T14 a diverged fork is reported and left alone, never merged or forced"
+}
+
+# --- T15: an unusable forge credential is reported, not swallowed ----------
+# Missing authentication and a missing gh share one reported-failure shape; this
+# pins that shape and the warn-and-continue posture behind it.
+test_fork_sync_failure_is_reported() {
+  local w out
+  w=$(new_world t15)
+  make_fork "$w"
+  bump_upstream "$w"
+  : > "$w/fake/gh-unauthenticated"
+  bump_origin "$w" readme
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "upstream sync: failed: not authenticated to GitHub" \
+    "an unusable credential must be reported"
+  assert_contains "$out" "upstream-sync: failed" \
+    "a failed sync must never be summarised as a clean update"
+  # Warn and continue: origin's own commit still lands.
+  assert_contains "$out" "firstmate: updated " "the rest of the pass must still run"
+  [ "$(git -C "$w/main" show HEAD:AGENTS.md)" = "v1" ] \
+    || fail "upstream content landed despite the failed sync"
+  pass "T15 a failed fork sync is reported and the pass continues honestly"
+}
+
 test_updates_main_and_secondmate
 test_reread_gate_is_instruction_only
 test_bin_only_advance_restarts
@@ -485,5 +655,9 @@ test_registry_backstop_dedup_and_self_exclusion
 test_firstmate_wrong_branch_skipped
 test_firstmate_detached_head_skipped
 test_unsafe_secondmate_home_skipped_before_git_update
+test_fork_syncs_from_upstream_then_fast_forwards
+test_non_fork_home_is_unchanged
+test_diverged_fork_is_reported_not_forced
+test_fork_sync_failure_is_reported
 
 echo "# all fm-update tests passed"
