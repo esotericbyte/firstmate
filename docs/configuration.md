@@ -1033,6 +1033,16 @@ The flag is per home and is not inherited by secondmate homes, which keep their 
 Only its presence is read, at each fresh spawn, review, and promotion.
 The [`fm-spawn.sh` header](../bin/fm-spawn.sh) owns the exact base rule, and the [`fm-review-diff.sh` header](../bin/fm-review-diff.sh) owns the review anchor.
 
+## docstrap question references (config/docstrap-references)
+
+The optional local, gitignored `config/docstrap-references` presence flag opts this home into emitting related-document references alongside the questions `bin/fm-procevent-docstrap.sh export` writes into a project document.
+With the flag absent, which is the default, every reference in the composed payload is dropped and named on stderr, and the exported document carries questions alone.
+With it present, a reference survives only when the path resolves to a markdown file inside the same project the question document is written into and the held task's own durable record names that exact path; anything else is dropped and reported, because a reference that turns out to be irrelevant costs a click and teaches the reader to stop opening them.
+A surviving reference is emitted as an `fm-ref: Q<n> path=<project-relative path>` line outside the question block, never as a link: firstmate names which document is relevant and does not own the site's URL structure.
+Nothing consumes those lines today; resolving one into a link, and opening it in docstrap's existing reference pane, belongs to docstrap's build side and is not part of this home's behavior.
+Only the file's presence is read, so its contents are ignored, and the flag is per home rather than inherited, because opting in is a property of the projects this home writes questions into.
+`bin/fm-procevent-docstrap.sh`'s header owns the payload schema, the private label-to-task record, the non-destructive answer read, and why a reference points by path rather than by docstrap's document id.
+
 ## Gate defaults (.no-mistakes.yaml)
 
 The tracked [`.no-mistakes.yaml`](../.no-mistakes.yaml) sets `test.evidence.store_in_repo: true` and runs the canonical [shell/workflow lint](../bin/fm-lint.sh) followed by the [Pi production-consumer typecheck](../tests/fm-pi-primary-types.test.sh) in the compiler-owning lint phase.
