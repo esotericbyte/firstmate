@@ -380,7 +380,6 @@ cat > "$LAB/second.json" <<'JSON'
   {"task":"fm-held-two","question":"Is the second question still open?"}]}
 JSON
 "$ADAPTER" export "$REDOC" "$LAB/first.json" >/dev/null 2>&1 || fail "the first export failed"
-REDOC_SID=$("$ADAPTER" source-id "$REDOC")
 REDOCID=01HRENUMBERRENUMBERRENUM
 {
   printf -- '---\nstrapdance:\n  kind: answers\n  project: "proj"\nanswers:\n'
