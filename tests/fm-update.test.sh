@@ -6,8 +6,10 @@
 #   - The running firstmate repo (on its default branch) fast-forwards from
 #     origin; a leased secondmate home (detached HEAD on the default branch)
 #     fast-forwards the same way.
-#   - FAST-FORWARD ONLY: a dirty, diverged, offline, or wrong-branch target is
+#   - A dirty, offline, wrong-branch, or genuinely unique diverged target is
 #     skipped and reported, never forced or stashed, so unlanded work survives.
+#     Divergence leaves a durable reconciliation record, while a clean local
+#     result already present upstream after a squash merge heals automatically.
 #   - The update is a single-parent fast-forward (never a merge commit) and a
 #     fast-forward of one worktree never disturbs another worktree's checkout
 #     or the shared default branch.
@@ -389,7 +391,7 @@ test_dirty_secondmate_skipped() {
 
 # --- T5: diverged secondmate is skipped, its commit preserved --------------
 test_diverged_secondmate_skipped() {
-  local w out before
+  local w out before marker second_out
   w=$(new_world t5)
   add_sm "$w" sm1
   # Local commit on the secondmate's detached HEAD makes it diverge from origin.
@@ -402,10 +404,57 @@ test_diverged_secondmate_skipped() {
   out=$(run_update "$w")
 
   assert_contains "$out" "secondmate sm1: skipped: diverged from origin/main" "diverged home skipped"
+  assert_contains "$out" "reconciliation required (record:" "diverged skip is actionable"
   assert_not_contains "$out" "fm-sm1" "diverged secondmate is not nudged"
   [ "$(git -C "$w/sm1" rev-parse HEAD)" = "$before" ] \
     || fail "diverged secondmate HEAD moved (unlanded work at risk)"
-  pass "T5 diverged secondmate skipped, local commit preserved"
+  marker="$w/home/state/.secondmate-update-reconcile/sm1.pending"
+  assert_present "$marker" "diverged secondmate did not retain a durable reconciliation record"
+  assert_grep 'schema=fm-secondmate-update-reconcile.v1' "$marker" "divergence record schema missing"
+  assert_grep "local_commit=$before" "$marker" "divergence record lost the protected local commit"
+
+  second_out=$(run_update "$w")
+  assert_contains "$second_out" "reconciliation required (record: $marker)" \
+    "a later update did not surface the durable divergence"
+  pass "T5 diverged secondmate is preserved and durably actionable"
+}
+
+test_squash_merged_divergence_reconciles() {
+  local w branch_base local_tip out marker
+  w=$(new_world t5b)
+  add_sm "$w" sm1
+  branch_base=$(git -C "$w/sm1" rev-parse HEAD)
+
+  printf 'v2\n' > "$w/sm1/AGENTS.md"
+  git -C "$w/sm1" add AGENTS.md
+  git -C "$w/sm1" commit -qm local-instructions
+  printf 'echo squash-landed\n' > "$w/sm1/bin/tool.sh"
+  git -C "$w/sm1" add bin/tool.sh
+  git -C "$w/sm1" commit -qm local-tooling
+  local_tip=$(git -C "$w/sm1" rev-parse HEAD)
+
+  bump_origin "$w" readme
+  out=$(run_update "$w")
+  marker="$w/home/state/.secondmate-update-reconcile/sm1.pending"
+  assert_contains "$out" "secondmate sm1: skipped: diverged from origin/main" \
+    "unique local work was not initially protected"
+  assert_present "$marker" "initial divergence did not leave its durable record"
+
+  git -C "$w/sm1" diff "$branch_base" "$local_tip" | git -C "$w/seed" apply
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm squash-local-contribution
+  git -C "$w/seed" push -q origin main
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "secondmate sm1: reconciled redundant divergence" \
+    "the squash-merged local result did not heal"
+  [ "$(git -C "$w/sm1" rev-parse HEAD)" = "$(git -C "$w/sm1" rev-parse origin/main)" ] \
+    || fail "reconciled secondmate did not reach origin/main"
+  assert_absent "$marker" "successful reconciliation left the divergence marker behind"
+  assert_contains "$out" "restart-secondmates: fm-sm1" \
+    "the reconciled live secondmate was excluded from restart"
+  pass "T5b squash-merged divergence heals and rejoins live convergence"
 }
 
 # --- T6: the git side is idempotent; the restart set is not -----------------
@@ -547,13 +596,49 @@ test_unsafe_secondmate_home_skipped_before_git_update() {
   pass "T11 unsafe secondmate home is not fast-forwarded"
 }
 
-# --- T12: a fork home syncs from upstream, then fast-forwards --------------
+# --- T12: a self-update rebinds a locally armed watch on the primary --------
+# A self-update fast-forwards bin/ in place, changing bytes an armed
+# fm-procevent-when watch's trust binding was hashed against with no
+# tampering involved; without a rebind the very next fire would be refused.
+test_primary_update_rebinds_local_watch() {
+  local w before_hash after_hash out spec
+  w=$(new_world t12)
+  mkdir -p "$w/seed/bin"
+  printf "#!/usr/bin/env bash\necho v1 >> \"\$1\"\n" > "$w/seed/bin/watched-action.sh"
+  chmod +x "$w/seed/bin/watched-action.sh"
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm add-watched-action
+  git -C "$w/seed" push -q origin main
+  git -C "$w/main" pull -q origin main
+
+  FM_ROOT_OVERRIDE="$w/main" FM_HOME="$w/home" "$ROOT/bin/fm-procevent-when.sh" \
+    arm rebind-primary --interval 60 --stable 1 \
+    --condition true --action "$w/main/bin/watched-action.sh" "$w/rebind.log" >/dev/null
+  spec="$w/home/state/when/when-rebind-primary.spec"
+  before_hash=$(grep '^action_sha256=' "$spec")
+
+  printf "#!/usr/bin/env bash\necho v2 >> \"\$1\"\n" > "$w/seed/bin/watched-action.sh"
+  git -C "$w/seed" add -A
+  git -C "$w/seed" commit -qm bump-watched-action
+  git -C "$w/seed" push -q origin main
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "firstmate: updated " "the primary still advanced"
+  assert_contains "$out" "rebound: when-rebind-primary" "the primary self-update rebound its own locally armed watch"
+  after_hash=$(grep '^action_sha256=' "$spec")
+  [ "$before_hash" != "$after_hash" ] \
+    || fail "the watch's trust binding was not refreshed to match the updated action bytes"
+  pass "T12 a self-update rebinds a locally armed watch on the primary"
+}
+
+# --- TF1: a fork home syncs from upstream, then fast-forwards --------------
 # The regression this closes: origin is the fork, a fork does not advance on its
 # own, so before this the pass reported success and delivered nothing while
 # upstream ran ahead.
 test_fork_syncs_from_upstream_then_fast_forwards() {
   local w out upstream_before
-  w=$(new_world t12)
+  w=$(new_world tf1)
   make_fork "$w"
   bump_upstream "$w"
   upstream_before=$(git -C "$w/upstream.git" rev-parse main)
@@ -574,13 +659,13 @@ test_fork_syncs_from_upstream_then_fast_forwards() {
   assert_not_contains "$(cat "$w/fake/gh-calls")" "--force" "the sync must never force"
   assert_contains "$(cat "$w/fake/gh-calls")" "repo sync fmtest/fork --source fmtest/up --branch main" \
     "the sync destination must be the fork and the source must be upstream"
-  pass "T12 a fork home syncs origin from upstream and lands the upstream commit in one update"
+  pass "TF1 a fork home syncs origin from upstream and lands the upstream commit in one update"
 }
 
-# --- T13: a non-fork home is unchanged -------------------------------------
+# --- TF2: a non-fork home is unchanged -------------------------------------
 test_non_fork_home_is_unchanged() {
   local w out
-  w=$(new_world t13)
+  w=$(new_world tf2)
   add_sm "$w" sm1
   bump_origin "$w" instr
 
@@ -590,13 +675,13 @@ test_non_fork_home_is_unchanged() {
   assert_contains "$out" "firstmate: updated " "the ordinary origin fast-forward must still happen"
   assert_contains "$out" "reread-firstmate: yes" "the ordinary summary must be unchanged"
   assert_contains "$out" "restart-secondmates: fm-sm1" "the ordinary summary must be unchanged"
-  pass "T13 a home with no upstream remote behaves exactly as before"
+  pass "TF2 a home with no upstream remote behaves exactly as before"
 }
 
-# --- T14: a diverged fork is named, never merged or forced -----------------
+# --- TF3: a diverged fork is named, never merged or forced -----------------
 test_diverged_fork_is_reported_not_forced() {
   local w out origin_before
-  w=$(new_world t14)
+  w=$(new_world tf3)
   make_fork "$w"
   bump_upstream "$w"
   : > "$w/fake/gh-diverged"
@@ -614,15 +699,15 @@ test_diverged_fork_is_reported_not_forced() {
     || fail "upstream content landed despite the refused sync"
   # The rest of the pass still runs against whatever origin itself carries.
   assert_contains "$out" "firstmate: already current" "the origin fast-forward must still be attempted"
-  pass "T14 a diverged fork is reported and left alone, never merged or forced"
+  pass "TF3 a diverged fork is reported and left alone, never merged or forced"
 }
 
-# --- T15: an unusable forge credential is reported, not swallowed ----------
+# --- TF4: an unusable forge credential is reported, not swallowed ----------
 # Missing authentication and a missing gh share one reported-failure shape; this
 # pins that shape and the warn-and-continue posture behind it.
 test_fork_sync_failure_is_reported() {
   local w out
-  w=$(new_world t15)
+  w=$(new_world tf4)
   make_fork "$w"
   bump_upstream "$w"
   : > "$w/fake/gh-unauthenticated"
@@ -638,7 +723,7 @@ test_fork_sync_failure_is_reported() {
   assert_contains "$out" "firstmate: updated " "the rest of the pass must still run"
   [ "$(git -C "$w/main" show HEAD:AGENTS.md)" = "v1" ] \
     || fail "upstream content landed despite the failed sync"
-  pass "T15 a failed fork sync is reported and the pass continues honestly"
+  pass "TF4 a failed fork sync is reported and the pass continues honestly"
 }
 
 test_updates_main_and_secondmate
@@ -649,12 +734,14 @@ test_dead_secondmate_gets_no_action
 test_legacy_remote_advance_restarts
 test_dirty_secondmate_skipped
 test_diverged_secondmate_skipped
+test_squash_merged_divergence_reconciles
 test_already_current_secondmate_still_restarts
 test_already_current_unprovable_mate_is_nudged
 test_registry_backstop_dedup_and_self_exclusion
 test_firstmate_wrong_branch_skipped
 test_firstmate_detached_head_skipped
 test_unsafe_secondmate_home_skipped_before_git_update
+test_primary_update_rebinds_local_watch
 test_fork_syncs_from_upstream_then_fast_forwards
 test_non_fork_home_is_unchanged
 test_diverged_fork_is_reported_not_forced
