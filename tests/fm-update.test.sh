@@ -148,8 +148,10 @@ bump_origin() {
 # into the bare origin - so the assertions downstream exercise the whole path
 # rather than a canned string. It records every invocation so a test can prove
 # what was and was not asked for, refuses --force outright, and honours two flag
-# files: gh-unauthenticated makes `auth status` fail, and gh-diverged makes the
-# sync fail the way the forge refuses a fork that cannot be fast-forwarded.
+# files: gh-unauthenticated makes `auth status` fail, gh-diverged makes the
+# sync fail the way the forge refuses a fork that cannot be fast-forwarded, and
+# gh-rewrites makes a REPORTED-SUCCESSFUL sync replace origin's branch instead of
+# advancing it, which is the outcome the post-sync verification exists to catch.
 make_fork() {
   local w=$1
   git init -q --bare "$w/upstream.git"
@@ -186,6 +188,11 @@ case "${1:-} ${2:-}" in
     if [ -e "$FM_FAKE_DIR/gh-diverged" ]; then
       echo "can't sync because there are diverging changes; specify --force to overwrite" >&2
       exit 1
+    fi
+    if [ -e "$FM_FAKE_DIR/gh-rewrites" ]; then
+      git -C "$world/origin.git" fetch -q "$world/upstream.git" +main:main || exit 1
+      echo 'Synced the "fmtest:main" branch from "fmtest/up:main"'
+      exit 0
     fi
     git -C "$world/origin.git" fetch -q "$world/upstream.git" main:main || exit 1
     echo 'Synced the "fmtest:main" branch from "fmtest/up:main"'
@@ -742,9 +749,48 @@ test_firstmate_wrong_branch_skipped
 test_firstmate_detached_head_skipped
 test_unsafe_secondmate_home_skipped_before_git_update
 test_primary_update_rebinds_local_watch
+# --- TF5: a clean sync is verified and names what arrived --------------------
+test_fork_sync_is_verified_and_reports_arrivals() {
+  local w out
+  w=$(new_world tf5)
+  make_fork "$w"
+  bump_upstream "$w"
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "upstream sync: verified " "a sync must be verified, not merely announced"
+  assert_contains "$out" " upstream commit(s) arrived" "the verification must name how much arrived"
+  assert_contains "$out" "upstream-sync: synced" "a verified sync must still summarise as synced"
+  pass "TF5 a clean sync is verified and reports which upstream commits arrived"
+}
+
+# --- TF6: a sync that REWRITES origin fails instead of reporting success -----
+test_fork_sync_rewrite_fails_loudly() {
+  local w out
+  w=$(new_world tf6)
+  make_fork "$w"
+  # Give the fork a commit of its own, so a replacement of origin's branch
+  # destroys work rather than merely reordering upstream's.
+  bump_origin "$w" instr
+  bump_upstream "$w"
+  : > "$w/fake/gh-rewrites"
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "history was REWRITTEN, not merged" \
+    "a sync that replaced the fork's branch must say so plainly"
+  assert_contains "$out" "upstream-sync: failed" \
+    "a rewriting sync must never summarise as a clean sync"
+  assert_not_contains "$out" "upstream sync: verified " \
+    "a rewriting sync must not claim verification"
+  pass "TF6 a sync that rewrites the fork's branch is reported as a failure, not a sync"
+}
+
 test_fork_syncs_from_upstream_then_fast_forwards
 test_non_fork_home_is_unchanged
 test_diverged_fork_is_reported_not_forced
 test_fork_sync_failure_is_reported
+test_fork_sync_is_verified_and_reports_arrivals
+test_fork_sync_rewrite_fails_loudly
 
 echo "# all fm-update tests passed"
