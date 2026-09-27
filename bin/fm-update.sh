@@ -42,10 +42,19 @@
 # upstream remote is a read-only source on every path here; its push URL is
 # deliberately unusable and nothing below ever pushes to it.
 #
+# `gh repo sync` is NOT fast-forward-only: it calls GitHub's merge-upstream API,
+# which MERGES a diverged fork rather than refusing it, so a reported `synced`
+# can include a merge nobody reviewed. Proven 2026-09-27, when a sync merged 11
+# upstream commits into a fork carrying its own work and reported only `synced`.
+# Every `synced` result is therefore VERIFIED before it is believed: the fork's
+# pre-sync head must still be an ancestor of its new head, and the commits that
+# arrived are printed. A rewrite is reported as a failure rather than a sync, so
+# a `synced` summary line means verified-and-nothing-lost, never merely accepted.
+#
 # Every failure - no gh, no GitHub authentication, an unreachable or unnameable
-# remote, or a fork that has DIVERGED from upstream - is reported on its own
-# status line and in the `upstream-sync:` summary line, and never resolved by a
-# merge or a force. All of them warn and continue rather than aborting: the run
+# remote, a fork GitHub itself refuses to sync, or a sync that rewrote history
+# instead of merging it - is reported on its own status line and in the
+# `upstream-sync:` summary line, and never resolved by a merge or a force. All of them warn and continue rather than aborting: the run
 # still has honest work to do (whatever origin itself carries, plus the whole
 # secondmate fleet), and nothing is left half-advanced, while the reported
 # failure plus the summary line keep the caller from reading the pass as a clean
@@ -169,9 +178,38 @@ upstream_sync_failed() {  # <reason>
   echo "upstream sync: failed: $1"
 }
 
+# Prove a sync neither dropped nor rewrote what the fork already had, and report
+# which upstream commits arrived. A bare `synced` is not evidence that this
+# fork's own commits survived, so this verifies rather than trusting the word.
+verify_fork_sync() {  # <default-branch> <origin-slug> <pre-sync-head>
+  local default=$1 origin_slug=$2 before=$3 after count
+  if [ -z "$before" ]; then
+    echo "upstream sync: no pre-sync $default head on $origin_slug to verify against"
+    return 0
+  fi
+  if ! git -C "$FM_ROOT" fetch --quiet origin "refs/heads/$default" 2>/dev/null; then
+    upstream_sync_failed "$origin_slug $default was synced but could not be fetched to verify it"
+    return 0
+  fi
+  after=$(git -C "$FM_ROOT" rev-parse FETCH_HEAD 2>/dev/null) || after=""
+  if [ -z "$after" ]; then
+    upstream_sync_failed "$origin_slug $default was synced but its new head could not be read"
+    return 0
+  fi
+  if ! git -C "$FM_ROOT" cat-file -e "${before}^{commit}" 2>/dev/null \
+    || ! git -C "$FM_ROOT" merge-base --is-ancestor "$before" "$after"; then
+    upstream_sync_failed "$origin_slug $default no longer contains its pre-sync commit $before: history was REWRITTEN, not merged"
+    return 0
+  fi
+  count=$(git -C "$FM_ROOT" rev-list --count "$before..$after" 2>/dev/null) || count="?"
+  echo "upstream sync: verified $before survived; $count upstream commit(s) arrived"
+  git -C "$FM_ROOT" log --oneline --no-decorate -10 "$before..$after" 2>/dev/null \
+    | sed 's/^/upstream sync:   /'
+}
+
 # Advance origin's default branch from upstream when this home is a fork.
 sync_fork_from_upstream() {
-  local upstream_slug origin_slug default out
+  local upstream_slug origin_slug default out before
   git -C "$FM_ROOT" remote get-url upstream >/dev/null 2>&1 || return 0
 
   default=$(default_branch "$FM_ROOT") || {
@@ -199,6 +237,7 @@ sync_fork_from_upstream() {
     return 0
   }
 
+  before=$(git -C "$FM_ROOT" ls-remote origin "refs/heads/$default" 2>/dev/null | cut -f1)
   if ! out=$(gh repo sync "$origin_slug" --source "$upstream_slug" --branch "$default" 2>&1); then
     if printf '%s\n' "$out" | grep -qiE 'fast.?forward|diverg'; then
       upstream_sync_failed "$origin_slug $default has diverged from $upstream_slug $default and was left untouched: $(first_line "$out")"
@@ -213,6 +252,7 @@ sync_fork_from_upstream() {
   else
     upstream_sync="synced"
     echo "upstream sync: origin $default synced from $upstream_slug"
+    verify_fork_sync "$default" "$origin_slug" "$before"
   fi
 }
 
