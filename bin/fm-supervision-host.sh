@@ -191,6 +191,14 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-supervision-engine-lib.sh"
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
+# shellcheck source=bin/fm-node-pin-lib.sh
+. "$SCRIPT_DIR/fm-node-pin-lib.sh"
+
+# Owners start the host from harness hooks and plugins whose environment never
+# saw the session's shell setup, and the branch dispatch it runs imports
+# TypeScript. Run the host, and the engine it launches, on the checkout's Node
+# pin; without one the inherited PATH stands (bin/fm-node-pin-lib.sh).
+fm_node_pin_apply "$FM_ROOT" || true
 
 FIRST_ARM_RESTART=0
 case "${1:-}" in

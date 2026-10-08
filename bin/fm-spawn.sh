@@ -683,6 +683,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-project-capacity-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
+# shellcheck source=bin/fm-node-pin-lib.sh
+. "$SCRIPT_DIR/fm-node-pin-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -5436,6 +5438,11 @@ spawn_record_traceparent() {
 # process (go build, go test, ...) inherit it. Sent before the launch command so
 # the env is set when the agent starts; the brief sleep lets the export land.
 spawn_send_text_line "$T" "export GOTMPDIR=$TASK_TMP/gotmp"
+# A worker in a checkout of this repository runs on that checkout's Node pin;
+# every other worker keeps its pane's own Node (bin/fm-node-pin-lib.sh).
+if NODE_PIN_BIN=$(fm_node_pin_worker_bin "$WT" "$FM_ROOT"); then
+  spawn_send_text_line "$T" "export PATH=$(shell_quote "$NODE_PIN_BIN"):\"\$PATH\""
+fi
 # Export the compact-adviser kill switch into the pane shell through the same
 # pre-launch channel, so later commands in that shell inherit it too. The launch
 # command independently establishes the value for the agent process itself.

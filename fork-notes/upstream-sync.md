@@ -101,7 +101,10 @@ process-event bridge (`bin/fm-procevent-docstrap.sh` plus its test), the fork-sy
 `bin/fm-update.sh` plus its tests, and the question-restatement rule in `AGENTS.md`, with matching notes
 in `docs/configuration.md` and three skills (the docstrap layout entries live in the
 operational-home-layout skill since upstream moved that block out of `AGENTS.md` section 2), plus the
-four `fork-notes/` files and their classification in `docs/documentation-audiences.json`. Conflicts concentrate in `AGENTS.md`, `docs/configuration.md`, the updatefirstmate skill,
+four `fork-notes/` files and their classification in `docs/documentation-audiences.json`. The Node pin added
+after that merge brings a fifth note, `requirements.md`, plus `.node-version`, `bin/fm-node-pin-lib.sh` and its
+test, and a few lines each in `bin/fm-sessionstart-run.sh`, `bin/fm-supervision-host.sh`, and `bin/fm-spawn.sh`.
+Conflicts concentrate in `AGENTS.md`, `docs/configuration.md`, the updatefirstmate skill,
 and `tests/fm-update.test.sh`, because both sides append to the same anchors.
 
 Resolution rule for all four: **keep both sides.** Upstream's entries keep their position and ours follow.

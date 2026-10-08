@@ -549,6 +549,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "fork-notes/requirements.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "fork-notes/settings-change-log.md",
       "audience": "maintainer-architecture"
     },

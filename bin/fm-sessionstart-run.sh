@@ -61,6 +61,8 @@ COMPLETION_FILE="$STATE/.session-start-complete"
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 # shellcheck source=bin/fm-hook-host-lib.sh
 . "$SCRIPT_DIR/fm-hook-host-lib.sh"
+# shellcheck source=bin/fm-node-pin-lib.sh
+. "$SCRIPT_DIR/fm-node-pin-lib.sh"
 
 SOURCE=
 PI_PREREQUISITE=0
@@ -77,6 +79,18 @@ while [ $# -gt 0 ]; do
     *) shift ;;
   esac
 done
+
+# A Claude session reads CLAUDE_ENV_FILE before each later shell command, so the
+# checkout's Node pin (bin/fm-node-pin-lib.sh) reaches every Firstmate command
+# that session runs. This happens before any stand-down because the pin belongs
+# to the checkout, not to the helm. Without the pin, the file is left alone.
+if [ -n "${CLAUDE_ENV_FILE:-}" ] && NODE_PIN_BIN=$(fm_node_pin_bin "$FM_ROOT"); then
+  # shellcheck disable=SC2016 # $PATH expands when the env file is sourced.
+  printf -v NODE_PIN_LINE 'case ":$PATH" in :%q:*) ;; *) export PATH=%q:"$PATH" ;; esac' \
+    "$NODE_PIN_BIN" "$NODE_PIN_BIN"
+  grep -qxF -- "$NODE_PIN_LINE" "$CLAUDE_ENV_FILE" 2>/dev/null ||
+    printf '%s\n' "$NODE_PIN_LINE" >>"$CLAUDE_ENV_FILE" 2>/dev/null || true
+fi
 
 stand_down() {
   if [ "$PI_PREREQUISITE" = 1 ]; then
