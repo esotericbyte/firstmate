@@ -1,0 +1,16 @@
+== re-homed docstrap layout entries in operational-home-layout skill ==
+44-config/pipeline-spend  optional presence flag opting this home in to default-off per-task no-mistakes spend recording in data/pipeline-spend.jsonl; LOCAL, gitignored, and not inherited; see docs/configuration.md "No-mistakes pipeline spend"
+45:config/docstrap-references  optional presence flag opting this home into default-off related-document references beside exported docstrap questions; LOCAL, gitignored, and not inherited; see docs/configuration.md "docstrap question references"
+46-config/turnend-churn-absorb  optional presence flag opting this home into the default-off absorb of bare turn-end wakes on pane churn; LOCAL, gitignored, and not inherited; see docs/configuration.md "Turn-end pane-churn absorb"
+--
+100-  decision-bindings/ private records marking a captured-answer source as feeding the keyed-answer intake, with a legacy origin on pre-collapse records; written only by bin/fm-captain-hold.sh bind, dropped by unbind and by source retirement (`process-event-sources` and `captain-hold-lifecycle` skills; docs/captain-hold-lifecycle.md)
+101:  docstrap-questions/ private per-source record mapping an exported question document's Q<n> labels to the captain-held task ids they ask about; the only place a docstrap answer can resolve to a task, written only by bin/fm-procevent-docstrap.sh export
+102:  docstrap-answers/  private per-source read position and delivery ledger for one project's docstrap answer store; written only by bin/fm-procevent-docstrap.sh, which never modifies the store itself
+103-  reconcile-requests/ private open obligations to re-check a captain call whose board selection was `reconcile`; written only by bin/fm-captain-hold.sh, retired by its verify-then-decide outcomes or a normal answer that settles the call (`process-event-sources` and `captain-hold-lifecycle` skills; docs/captain-hold-lifecycle.md)
+== AGENTS.md pointer to skill ==
+62:Load `operational-home-layout` when locating, interpreting, or changing Firstmate home, config, data, state, project, or generated runtime paths.
+== AGENTS.md section 9 restate rule ==
+344:This binds the summary even when the question's full text already exists in a report, a spec, a backlog note, or an earlier message; a pointer is not a restatement.
+345:Where more than four are open, restate the first four in full and say plainly how many remain and where they live.
+== conflict markers anywhere ==
+none-if-empty

@@ -1,0 +1,29 @@
+== fork commits (merge-base..e626dd3f) all ancestors of HEAD ==
+ancestor OK e626dd3 docs(fork): record the decided Go HTTP event listener architecture
+ancestor OK 5b0914b docs(fork): track fork notes so they survive a fresh clone
+ancestor OK bd8c43c feat(update): verify a fork sync instead of only announcing it
+ancestor OK 0c5872f Merge branch 'kunchenguid:main' into main
+ancestor OK 843b102 Merge pull request #1 from esotericbyte/fm/fm-fork-upstream-merge-h145
+ancestor OK 1890f38 test(docstrap): drop a dead source-id assignment the renumber case never reads
+ancestor OK 1613972 Merge upstream/main into the fork, preserving all three fork commits
+ancestor OK 2e2cd0f docs(agents): restate a question rather than only numbering it
+ancestor OK da7647f feat(bin): sync a fork from upstream before /updatefirstmate fast-forwards
+ancestor OK 61b7f44 feat(bin): bridge captain-held decisions into docstrap questions and read the answers back
+== upstream b062eb94 ancestor of HEAD ==
+OK
+== fork-side changes vs merge-base: files whose fork diff is not wholly in HEAD ==
+ok .agents/skills/process-event-sources/SKILL.md
+ok .agents/skills/updatefirstmate/SKILL.md
+--- AGENTS.md: 3 fork-added lines not verbatim in HEAD
+  docstrap-answers/  private per-source read position and delivery ledger for one project's docstrap answer store; written only by bin/fm-procevent-docstrap.sh, which never modifies the store itself
+  docstrap-questions/ private per-source record mapping an exported question document's Q<n> labels to the captain-held task ids they ask about; the only place a docstrap answer can resolve to a task, written only by bin/fm-procevent-docstrap.sh export
+config/docstrap-references  optional presence flag opting this home into default-off related-document references beside exported docstrap questions; LOCAL, gitignored, and not inherited; see docs/configuration.md "docstrap question references"
+ok bin/fm-procevent-docstrap.sh
+ok bin/fm-update.sh
+ok docs/configuration.md
+ok fork-notes/README.md
+ok fork-notes/go-listener-architecture.md
+ok fork-notes/settings-change-log.md
+ok fork-notes/upstream-sync.md
+ok tests/fm-procevent-docstrap.test.sh
+ok tests/fm-update.test.sh

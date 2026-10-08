@@ -1,0 +1,29 @@
+ok - export writes a question document and reports its source id
+ok - the question document satisfies docstrap's three discovery rules
+ok - each question block is one line and ends at a blank line
+ok - docstrap itself finds exactly the exported questions
+ok - references are dropped, and named, while the opt-in flag is absent
+ok - an opted-in reference survives only when the held task's record names it
+ok - a reference line is not itself discovered as a question
+ok - a reference that does not resolve inside the project is dropped
+ok - export refuses the question shapes a script can see are wrong
+ok - export refuses any supplied string that would mint a question
+ok - arm refuses until the source is bound to the keyed-answer intake
+ok - a bound source registers its own blocking listener
+ok - the listener reads the answer store without modifying it
+ok - a reading reports what is answered and what is still open
+ok - answers keys each row on the held task id from the private export record
+ok - answers refuses prose: only labels the export wrote resolve to a task
+ok - a payload line that is not an answer record produces no keyed answer
+ok - autohandle advances the durable read position after capture
+ok - an answer already recorded as delivered is not delivered twice
+ok - a truncated or replaced store is detected and delivers nothing
+ok - a store that stops parsing as an answer file is a continuity break
+ok - a store that vanishes after being read is a continuity break
+ok - a re-export that renumbers the questions does not misdeliver an earlier answer
+ok - an answer written after a re-export reaches the task now at that label
+ok - an export that changes nothing leaves the read position alone
+ok - read presents a captured result without changing anything
+ok - retire drops the registration and this source's private records
+ok - the live runner captures, applies, and announces a docstrap reading
+# all fm-procevent-docstrap tests passed
