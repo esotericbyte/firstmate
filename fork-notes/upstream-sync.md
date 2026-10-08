@@ -31,7 +31,7 @@ one command, and the tokens it costs are the tokens of reading six lines of outp
 our own default branch that nobody read:
 
     git -C ~/firstmate log --oneline <old-head>..origin/main
-    git -C ~/firstmate diff --stat <upstream-head> origin/main   # fork divergence: expect 8 files
+    git -C ~/firstmate diff --stat <upstream-head> origin/main   # fork divergence: expect the files section 5 lists
 
 If divergence has grown beyond the fork's own features, something merged that should not have.
 
@@ -96,10 +96,12 @@ Each takes about ten minutes. Run them before pushing, not after.
 
 ## 5 What the fork actually contains, so divergence stays checkable
 
-Eight files, about 1,985 insertions, in three commits. The docstrap process-event bridge
-(`bin/fm-procevent-docstrap.sh` plus its test), the fork-sync feature in `bin/fm-update.sh` plus its
-tests, and the question-restatement rule in `AGENTS.md`, with matching notes in `docs/configuration.md`
-and two skills. Conflicts concentrate in `AGENTS.md`, `docs/configuration.md`, the updatefirstmate skill,
+Fourteen files, about 2,437 insertions, as of the 2026-10-07 merge of upstream b062eb94. The docstrap
+process-event bridge (`bin/fm-procevent-docstrap.sh` plus its test), the fork-sync feature in
+`bin/fm-update.sh` plus its tests, and the question-restatement rule in `AGENTS.md`, with matching notes
+in `docs/configuration.md` and three skills (the docstrap layout entries live in the
+operational-home-layout skill since upstream moved that block out of `AGENTS.md` section 2), plus the
+four `fork-notes/` files and their classification in `docs/documentation-audiences.json`. Conflicts concentrate in `AGENTS.md`, `docs/configuration.md`, the updatefirstmate skill,
 and `tests/fm-update.test.sh`, because both sides append to the same anchors.
 
 Resolution rule for all four: **keep both sides.** Upstream's entries keep their position and ours follow.
