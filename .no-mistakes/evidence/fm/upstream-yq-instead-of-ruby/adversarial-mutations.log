@@ -1,0 +1,57 @@
+=== MUTATION: job timeout 30 -> 30.0 (float, not int)
+-    timeout-minutes: 30
++    timeout-minutes: 30.0
+not ok - these CI jobs have no finite hang tripwire:
+lint: 30.0
+exit=1
+=== MUTATION: job timeout removed
+-    timeout-minutes: 30
+not ok - these CI jobs have no finite hang tripwire:
+lint: null
+exit=1
+=== MUTATION: job timeout 0
+-    timeout-minutes: 30
++    timeout-minutes: 0
+not ok - these CI jobs have no finite hang tripwire:
+lint: 0
+exit=1
+=== MUTATION: cancel-in-progress compares push instead of pull_request
+-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
++  cancel-in-progress: ${{ github.event_name == 'push' }}
+not ok - PR runs must cancel the in-progress run, got false
+exit=1
+=== MUTATION: concurrency group drops PR-number fallback
+-  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
++  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.run_id }}
+not ok - two runs of one PR must share a concurrency group, got ci-CI-pull_request-900001 and ci-CI-pull_request-900002
+exit=1
+=== MUTATION: Herdr family step timeout 20 -> 25
+-        timeout-minutes: 20
++        timeout-minutes: 25
+not ok - the Herdr family-run step must be the 20-minute tripwire, got 25
+exit=1
+=== MUTATION: Herdr cleanup step loses if: always()
+-        if: always()
+jq: error (at <stdin>:366): teardown must run under always()
+not ok - could not read the Herdr family-run step
+exit=1
+=== MUTATION: serial fail-fast true
+-      fail-fast: false
++      fail-fast: true
+jq: error (at <stdin>:367): lint failures must not cancel another partition
+not ok - CI partition contract
+exit=1
+=== MUTATION: invalid YAML
++  : : [unclosed
+Error: bad file '/tmp/fm-nm-yq-head.WXXzHC/.github/workflows/ci.yml': go-yaml load error in parser (while parsing a block mapping) at L1.C3: did not find expected key
+not ok - could not parse .github/workflows/ci.yml as YAML
+exit=1
+=== MUTATION: commands.test set in .no-mistakes.yaml
++commands:
++  test: bash tests/run.sh
+not ok - commands.test must be absent or empty so Test stays intent-targeted; got: "bash tests/run.sh"
+exit=1
+=== MUTATION: commands.test empty string (allowed)
++commands:
++  test: ""
+exit=0

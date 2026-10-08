@@ -1,0 +1,14 @@
+=== MUTATION: tests-portable-serial fail-fast true
+jq: error (at <stdin>:367): serial failures must not cancel other shards
+not ok - CI partition contract
+exit=1
+=== GUARD: yq absent from PATH
+/tmp/fm-nm-yq-head.WXXzHC/bin/fm-wake-lib.sh: line 19: mkdir: command not found
+tests/fm-ci-workflow.test.sh: line 22: assert_present: command not found
+tests/fm-ci-workflow.test.sh: line 23: fm_require_yq: command not found
+/tmp/fm-nm-yq-head.WXXzHC/bin/fm-wake-lib.sh: line 19: mkdir: command not found
+tests/fm-nm-test-contract.test.sh: line 11: fm_require_yq: command not found
+=== GUARD: Python kislyuk yq (reports "yq 3.4.3") shadows mikefarah yq
+not ok - mikefarah yq v4 (https://github.com/mikefarah/yq) is required to parse .github/workflows/ci.yml as YAML; found: yq 3.4.3
+=== GUARD: mikefarah yq v3
+not ok - mikefarah yq v4 (https://github.com/mikefarah/yq) is required to parse .no-mistakes.yaml for this contract; found: yq (https://github.com/mikefarah/yq/) version 3.4.1

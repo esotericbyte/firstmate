@@ -1,0 +1,21 @@
+=== fm-test-run herdr step contract, mutation: none
+ok - Windows emulation exempts only synthetic POSIX modes
+ok - Herdr CI family-run step times out at 20 min under a 75 min job backstop
+exit=0
+=== fm-test-run herdr step contract, mutation: 340s/20/25/
+-        timeout-minutes: 20
++        timeout-minutes: 25
+ok - Windows emulation exempts only synthetic POSIX modes
+not ok - family-run step timeout must be 20 minutes, got 25
+exit=1
+=== fm-test-run herdr step contract, mutation: 257s/75/90/
+-    timeout-minutes: 75
++    timeout-minutes: 90
+ok - Windows emulation exempts only synthetic POSIX modes
+not ok - tests-herdr job backstop must stay 75 minutes, got 90
+exit=1
+=== fm-test-run herdr step contract, mutation: 340d
+-        timeout-minutes: 20
+jq: error (at <stdin>:366): family-run step has no timeout-minutes
+not ok - could not parse tests-herdr timeouts from ci.yml
+exit=1

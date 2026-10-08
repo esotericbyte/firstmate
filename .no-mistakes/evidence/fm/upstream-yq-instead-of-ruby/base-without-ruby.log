@@ -1,0 +1,5 @@
+== BASE b062eb9 (ruby) on this host, ruby absent ==
+not ok - ruby is required to parse .github/workflows/ci.yml as YAML
+rc=1
+not ok - ruby is required to parse .no-mistakes.yaml for this contract
+rc=1
