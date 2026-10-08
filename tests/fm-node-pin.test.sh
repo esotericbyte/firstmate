@@ -16,14 +16,16 @@ set -u
 TMP_ROOT=$(fm_test_tmproot fm-node-pin)
 FNM_ROOT="$TMP_ROOT/fnm"
 FNM_BIN="$TMP_ROOT/fnm-bin"
-PIN_BIN="$FNM_ROOT/v24.18.0/bin"
+PIN_BIN="$FNM_ROOT/node-versions/v24.18.0/installation/bin"
+DEFAULT_INSTALL="$FNM_ROOT/node-versions/v22.12.0/installation"
 
 # A fake fnm with v24.18.0 installed: `--using` resolves 24, 24.18 and v24.18.0
 # and runs the command with that version's bin directory first on PATH, as fnm
 # does; any other version is refused the way fnm refuses an uninstalled one.
-mkdir -p "$PIN_BIN" "$FNM_BIN"
+mkdir -p "$PIN_BIN" "$DEFAULT_INSTALL/bin" "$FNM_BIN"
 printf '#!/bin/sh\necho v24.18.0\n' >"$PIN_BIN/node"
-chmod +x "$PIN_BIN/node"
+printf '#!/bin/sh\necho v22.12.0\n' >"$DEFAULT_INSTALL/bin/node"
+chmod +x "$PIN_BIN/node" "$DEFAULT_INSTALL/bin/node"
 cat >"$FNM_BIN/fnm" <<SH
 #!/bin/sh
 [ "\$1" = exec ] || exit 2
@@ -90,42 +92,51 @@ apply_twice() {  # <path> <dir>
     printf "PATH=%s\n" "$PATH"' apply "$LIB" "$2"
 }
 
-test_apply_places_pin_before_default_node() {
-  local dir shim default out
+test_apply_displaces_only_fnm_node() {
+  local dir shim multishell other nonode out
   dir=$(checkout_with_pin "$TMP_ROOT/apply" '24')
   shim="$TMP_ROOT/apply-shim"
-  default="$TMP_ROOT/apply-default"
-  mkdir -p "$shim" "$default"
-  printf '#!/bin/sh\necho shim\n' >"$shim/claude"
-  printf '#!/bin/sh\necho v22.12.0\n' >"$default/node"
-  chmod +x "$shim/claude" "$default/node"
+  other="$TMP_ROOT/apply-other-node"
+  nonode="$TMP_ROOT/no-node-here"
+  multishell="$TMP_ROOT/fnm_multishells/1_1"
+  mkdir -p "$shim" "$other" "$nonode" "${multishell%/*}"
+  ln -sfn "$DEFAULT_INSTALL" "$multishell"
+  printf '#!/bin/sh\necho shim\n' >"$shim/node"
+  printf '#!/bin/sh\necho system\n' >"$other/node"
+  chmod +x "$shim/node" "$other/node"
+  ln -sf "$(command -v sh)" "$nonode/sh"
 
-  out=$(apply_twice "$FNM_BIN:$default:/usr/bin:/bin" "$dir")
-  expect_code 0 $? "applying the pin should succeed: $out"
+  out=$(apply_twice "$FNM_BIN:$multishell/bin:/usr/bin:/bin" "$dir")
+  expect_code 0 $? "applying the pin over fnm's multishell node should succeed: $out"
   assert_contains "$out" "$PIN_BIN/node" "node should resolve to the pinned version after apply"
-  assert_contains "$out" "PATH=$FNM_BIN:$PIN_BIN:$default:/usr/bin:/bin" \
-    "apply should put the pinned bin directory just before the default node and keep the rest in order"
+  assert_contains "$out" "PATH=$FNM_BIN:$PIN_BIN:$multishell/bin:/usr/bin:/bin" \
+    "the pin should go just before fnm's multishell node and keep the rest in order"
 
-  out=$(apply_twice "$shim:$FNM_BIN:$default:/usr/bin:/bin" "$dir")
-  expect_code 0 $? "applying the pin behind an earlier stub directory should succeed: $out"
-  assert_contains "$out" "PATH=$shim:$FNM_BIN:$PIN_BIN:$default:/usr/bin:/bin" \
-    "entries ahead of the default node should keep their precedence"
-  out=$(PATH="$shim:$FNM_BIN:$default:/usr/bin:/bin" /bin/bash -c '. "$1"; fm_node_pin_apply "$2"; command -v claude' apply "$LIB" "$dir")
-  assert_equals "$shim/claude" "$out" "an earlier stub should stay resolved after apply"
+  out=$(apply_twice "$FNM_BIN:$DEFAULT_INSTALL/bin:/usr/bin:/bin" "$dir")
+  expect_code 0 $? "applying the pin over an fnm node-versions directory should succeed: $out"
+  assert_contains "$out" "PATH=$FNM_BIN:$PIN_BIN:$DEFAULT_INSTALL/bin:/usr/bin:/bin" \
+    "the pin should go just before an fnm node-versions directory"
 
-  out=$(apply_twice "$FNM_BIN:$PIN_BIN:$default:/usr/bin:/bin" "$dir")
+  out=$(lib_call "$shim:$FNM_BIN:$multishell/bin:/usr/bin:/bin" fm_node_pin_apply "$dir")
+  assert_contains "$out" "PATH=$shim:$FNM_BIN:$multishell/bin:/usr/bin:/bin" \
+    "a fake node shim earlier on PATH should leave PATH unchanged"
+  out=$(PATH="$shim:$FNM_BIN:$multishell/bin:/usr/bin:/bin" /bin/bash -c '. "$1"; fm_node_pin_apply "$2"; command -v node' apply "$LIB" "$dir")
+  assert_equals "$shim/node" "$out" "a fake node shim earlier on PATH should stay the resolved node"
+
+  out=$(lib_call "$FNM_BIN:$other:$multishell/bin:/usr/bin:/bin" fm_node_pin_apply "$dir")
+  assert_contains "$out" "rc=1" "a non-fnm node ahead of fnm's should report no pin"
+  assert_contains "$out" "PATH=$FNM_BIN:$other:$multishell/bin:/usr/bin:/bin" \
+    "a non-fnm node ahead of fnm's should keep its precedence"
+
+  out=$(apply_twice "$FNM_BIN:$PIN_BIN:$multishell/bin:/usr/bin:/bin" "$dir")
   expect_code 0 $? "applying the pin when it already leads should succeed: $out"
-  assert_contains "$out" "PATH=$FNM_BIN:$PIN_BIN:$default:/usr/bin:/bin" \
+  assert_contains "$out" "PATH=$FNM_BIN:$PIN_BIN:$multishell/bin:/usr/bin:/bin" \
     "a PATH whose first node already is the pinned one should be left unchanged"
 
-  mkdir -p "$TMP_ROOT/no-node-here"
-  ln -sf "$(command -v sh)" "$TMP_ROOT/no-node-here/sh"
-  out=$(apply_twice "$FNM_BIN:$TMP_ROOT/no-node-here" "$dir")
-  expect_code 0 $? "applying the pin with no node on PATH should succeed: $out"
-  assert_contains "$out" "$PIN_BIN/node" "the appended pin should supply node when PATH had none"
-  assert_contains "$out" "PATH=$FNM_BIN:$TMP_ROOT/no-node-here:$PIN_BIN" \
-    "with no node on PATH the pinned directory should be appended"
-  pass "applying the pin places it just before the caller's first node, keeps earlier entries, and is idempotent"
+  out=$(lib_call "$FNM_BIN:$nonode" fm_node_pin_apply "$dir")
+  assert_contains "$out" "rc=1" "no node on PATH should report no pin"
+  assert_contains "$out" "PATH=$FNM_BIN:$nonode" "no node on PATH should leave PATH unchanged"
+  pass "applying the pin displaces only an fnm-managed node, keeps any other earlier node, and is idempotent"
 }
 
 test_absent_pin_leaves_path_unchanged() {
@@ -259,7 +270,7 @@ command -v node")
 }
 
 test_version_forms
-test_apply_places_pin_before_default_node
+test_apply_displaces_only_fnm_node
 test_absent_pin_leaves_path_unchanged
 test_worker_pin_requires_same_repository
 test_claude_env_file_persists_pin_once
