@@ -541,6 +541,22 @@
       "audience": "operator-current"
     },
     {
+      "path": "fork-notes/README.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "fork-notes/go-listener-architecture.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "fork-notes/settings-change-log.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "fork-notes/upstream-sync.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "skills/stow/SKILL.md",
       "audience": "public-product"
     },
