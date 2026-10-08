@@ -1,0 +1,4 @@
+== Worker pin decision (fm_node_pin_worker_bin) ==
+firstmate worktree worker -> /home/johnh/.local/share/fnm/node-versions/v24.18.0/installation/bin
+rc=0
+other project (has .node-version 24, different repo) -> rc=1

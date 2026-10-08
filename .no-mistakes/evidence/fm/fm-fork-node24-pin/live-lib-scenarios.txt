@@ -1,0 +1,19 @@
+== Scenario A: real machine PATH (fnm multishell v22 first) ==
+before: /run/user/1002/fnm_multishells/688_1791239199145/bin/node v22.12.0
+rc=0
+after: /home/johnh/.local/share/fnm/node-versions/v24.18.0/installation/bin/node v24.18.0
+tasks-axi -> /home/johnh/.local/share/fnm/node-versions/v24.18.0/installation/bin/tasks-axi
+gh-axi -> /home/johnh/.local/share/fnm/node-versions/v24.18.0/installation/bin/gh-axi
+codex -> /home/johnh/.local/share/fnm/node-versions/v24.18.0/installation/bin/codex
+repeat rc=0 unchanged=yes
+== Scenario B: fake node shim dir earlier on PATH ==
+rc=1 PATH-unchanged=yes node=/tmp/fm-nodepin-test.JSagb6/fakebin/node -> FAKE-NODE
+== Scenario C: non-fnm system node first (/usr/bin) ==
+ls: cannot access '/usr/bin/node': No such file or directory
+== Scenario D: checkout without .node-version ==
+rc=1 node=v22.12.0
+== Scenario E: fnm absent from PATH ==
+rc=1 node=v22.12.0
+== Default fnm/other shells unaffected ==
+v22.12.0
+/home/johnh/.local/share/fnm/node-versions/v22.12.0/installation

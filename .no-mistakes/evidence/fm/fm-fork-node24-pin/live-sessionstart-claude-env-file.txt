@@ -1,0 +1,11 @@
+== SessionStart hook with CLAUDE_ENV_FILE (lab home) ==
+run 1 rc=0
+run 2 rc=0
+-- CLAUDE_ENV_FILE contents after two runs:
+case ":$PATH" in :/home/johnh/.local/share/fnm/node-versions/v24.18.0/installation/bin:*) ;; *) export PATH=/home/johnh/.local/share/fnm/node-versions/v24.18.0/installation/bin:"$PATH" ;; esac
+-- a later Claude shell command (env file sourced on top of the login PATH):
+/home/johnh/.local/share/fnm/node-versions/v24.18.0/installation/bin/node
+v24.18.0
+/home/johnh/.local/share/fnm/node-versions/v24.18.0/installation/bin/tasks-axi
+PATH-entries-for-v24=1
+-- a shell that never sourced it: node $(node -v)

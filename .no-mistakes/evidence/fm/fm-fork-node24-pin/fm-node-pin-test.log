@@ -1,0 +1,6 @@
+ok - only a plain [v]MAJOR[.MINOR[.PATCH]] first line is accepted as a pin
+ok - applying the pin displaces only an fnm-managed node, keeps any other earlier node, and is idempotent
+ok - a missing fnm or an uninstalled pinned version leaves PATH exactly as it was
+ok - the worker pin applies only to checkouts sharing the root's repository
+ok - a Claude session gets one idempotent pin line in CLAUDE_ENV_FILE, and none without fnm
+ok - spawn exports the pin into a firstmate worker's pane and leaves other projects' workers alone
