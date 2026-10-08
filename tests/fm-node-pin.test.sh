@@ -77,22 +77,55 @@ test_version_forms() {
   pass "only a plain [v]MAJOR[.MINOR[.PATCH]] first line is accepted as a pin"
 }
 
-test_apply_prepends_once() {
-  local dir out
-  dir=$(checkout_with_pin "$TMP_ROOT/apply" '24')
-  out=$(PATH="$FNM_BIN:/usr/bin:/bin" /bin/bash -c '
+# Apply the pin twice in a clean bash; print where node resolves and the PATH
+# left behind, failing if the second apply changed PATH.
+apply_twice() {  # <path> <dir>
+  PATH="$1" /bin/bash -c '
     . "$1"
     fm_node_pin_apply "$2" || exit 9
     first=$PATH
     fm_node_pin_apply "$2" || exit 9
     [ "$PATH" = "$first" ] || { echo "second apply changed PATH: $PATH"; exit 8; }
     command -v node
-    printf "PATH=%s\n" "$PATH"' apply "$LIB" "$dir")
+    printf "PATH=%s\n" "$PATH"' apply "$LIB" "$2"
+}
+
+test_apply_places_pin_before_default_node() {
+  local dir shim default out
+  dir=$(checkout_with_pin "$TMP_ROOT/apply" '24')
+  shim="$TMP_ROOT/apply-shim"
+  default="$TMP_ROOT/apply-default"
+  mkdir -p "$shim" "$default"
+  printf '#!/bin/sh\necho shim\n' >"$shim/claude"
+  printf '#!/bin/sh\necho v22.12.0\n' >"$default/node"
+  chmod +x "$shim/claude" "$default/node"
+
+  out=$(apply_twice "$FNM_BIN:$default:/usr/bin:/bin" "$dir")
   expect_code 0 $? "applying the pin should succeed: $out"
   assert_contains "$out" "$PIN_BIN/node" "node should resolve to the pinned version after apply"
-  assert_contains "$out" "PATH=$PIN_BIN:$FNM_BIN:/usr/bin:/bin" \
-    "apply should put the pinned bin directory first and keep the rest of PATH in order"
-  pass "applying the pin puts the pinned Node first on PATH and is idempotent"
+  assert_contains "$out" "PATH=$FNM_BIN:$PIN_BIN:$default:/usr/bin:/bin" \
+    "apply should put the pinned bin directory just before the default node and keep the rest in order"
+
+  out=$(apply_twice "$shim:$FNM_BIN:$default:/usr/bin:/bin" "$dir")
+  expect_code 0 $? "applying the pin behind an earlier stub directory should succeed: $out"
+  assert_contains "$out" "PATH=$shim:$FNM_BIN:$PIN_BIN:$default:/usr/bin:/bin" \
+    "entries ahead of the default node should keep their precedence"
+  out=$(PATH="$shim:$FNM_BIN:$default:/usr/bin:/bin" /bin/bash -c '. "$1"; fm_node_pin_apply "$2"; command -v claude' apply "$LIB" "$dir")
+  assert_equals "$shim/claude" "$out" "an earlier stub should stay resolved after apply"
+
+  out=$(apply_twice "$FNM_BIN:$PIN_BIN:$default:/usr/bin:/bin" "$dir")
+  expect_code 0 $? "applying the pin when it already leads should succeed: $out"
+  assert_contains "$out" "PATH=$FNM_BIN:$PIN_BIN:$default:/usr/bin:/bin" \
+    "a PATH whose first node already is the pinned one should be left unchanged"
+
+  mkdir -p "$TMP_ROOT/no-node-here"
+  ln -sf "$(command -v sh)" "$TMP_ROOT/no-node-here/sh"
+  out=$(apply_twice "$FNM_BIN:$TMP_ROOT/no-node-here" "$dir")
+  expect_code 0 $? "applying the pin with no node on PATH should succeed: $out"
+  assert_contains "$out" "$PIN_BIN/node" "the appended pin should supply node when PATH had none"
+  assert_contains "$out" "PATH=$FNM_BIN:$TMP_ROOT/no-node-here:$PIN_BIN" \
+    "with no node on PATH the pinned directory should be appended"
+  pass "applying the pin places it just before the caller's first node, keeps earlier entries, and is idempotent"
 }
 
 test_absent_pin_leaves_path_unchanged() {
@@ -226,7 +259,7 @@ command -v node")
 }
 
 test_version_forms
-test_apply_prepends_once
+test_apply_places_pin_before_default_node
 test_absent_pin_leaves_path_unchanged
 test_worker_pin_requires_same_repository
 test_claude_env_file_persists_pin_once

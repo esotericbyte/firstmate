@@ -18,7 +18,8 @@ Plain `node` is also used by the pre-tool command policies (`bin/fm-cd-command-p
 ### 1.1 How the pin is applied
 
 The pin covers only processes Firstmate starts, so the shell's default Node and every other project are unaffected.
-`bin/fm-node-pin-lib.sh` owns the mechanism: it reads `.node-version`, asks fnm for the matching installed version, and puts that version's bin directory first on PATH.
+`bin/fm-node-pin-lib.sh` owns the mechanism: it reads `.node-version`, asks fnm for the matching installed version, and puts that version's bin directory on PATH ahead of the Node the process would otherwise use.
+The supervision host inserts it immediately before the first PATH entry holding a `node`, so earlier entries keep their precedence; the Claude session environment and worker panes put it first.
 When fnm is not installed, `.node-version` is missing or not a plain version, or the pinned version is not installed, PATH is left exactly as it was.
 Three places apply it: a Claude session's later shell commands (through `CLAUDE_ENV_FILE` at session open), the supervision host and the engine it runs, and every worker Firstmate launches in a checkout of this repository.
 A worker on any other project keeps its own Node.

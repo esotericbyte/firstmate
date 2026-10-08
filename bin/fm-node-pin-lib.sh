@@ -5,9 +5,9 @@
 # This file is the single owner of how Firstmate selects Node for its own
 # processes. A checkout's `.node-version` names the Node version Firstmate needs
 # (fork-notes/requirements.md explains why). The pin is applied only to the
-# process environment Firstmate controls: a caller's PATH gains the pinned
-# version's bin directory in front, so `node` and every global npm tool fnm
-# installed under that version resolve there first. Nothing outside the
+# process environment Firstmate controls: the pinned version's bin directory
+# is placed so `node` and every global npm tool fnm installed under that version
+# resolve there ahead of the Node the caller would otherwise use. Nothing outside the
 # repository is read for configuration or written: the user's shell startup
 # files, fnm's default alias, and other projects keep their own Node.
 #
@@ -59,15 +59,30 @@ fm_node_pin_bin() {
 }
 
 # fm_node_pin_apply <dir>
-# Export PATH with <dir>'s pinned Node bin directory first. Idempotent: a PATH
-# that already starts with that directory is left as it is.
+# Export PATH with <dir>'s pinned Node bin directory inserted immediately before
+# the first PATH entry holding an executable `node`, so entries ahead of that
+# one (such as a test's stub directory) keep their precedence. When that entry
+# already is the pinned directory PATH is left as it is; when no entry holds a
+# `node` the pinned directory is appended.
 fm_node_pin_apply() {
-  local bin
+  local bin entry rest new=
   bin=$(fm_node_pin_bin "$1") || return 1
-  case ":${PATH:-}" in
-    ":$bin:"*|":$bin") ;;
-    *) PATH="$bin${PATH:+:$PATH}" ;;
-  esac
+  rest=${PATH:-}
+  while [ -n "$rest" ]; do
+    entry=${rest%%:*}
+    if [ -n "$entry" ] && [ -x "$entry/node" ] && [ ! -d "$entry/node" ]; then
+      [ "$entry" = "$bin" ] && return 0
+      PATH="$new$bin:$rest"
+      export PATH
+      return 0
+    fi
+    new="$new$entry:"
+    case "$rest" in
+      *:*) rest=${rest#*:} ;;
+      *) rest= ;;
+    esac
+  done
+  PATH="${PATH:+$PATH:}$bin"
   export PATH
 }
 
