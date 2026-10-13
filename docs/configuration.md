@@ -1043,6 +1043,11 @@ Nothing consumes those lines today; resolving one into a link, and opening it in
 Only the file's presence is read, so its contents are ignored, and the flag is per home rather than inherited, because opting in is a property of the projects this home writes questions into.
 `bin/fm-procevent-docstrap.sh`'s header owns the payload schema, the private label-to-task record, the non-destructive answer read, and why a reference points by path rather than by docstrap's document id.
 
+An armed question document's answers are read only when the captain presses docstrap's "answers done" prompt for that document, never on a timer.
+docstrap shows that prompt only when its own user config sets `answers_done_command`, an argv list it runs once per press with `--project <project key> --document <document path>` appended, and this home's side of that command is `bin/fm-procevent-docstrap.sh notice`.
+For this home the setting is `answers_done_command: ["<FM_HOME>/bin/fm-procevent-docstrap.sh", "notice"]`, with `<FM_HOME>` spelled as the absolute path of the firstmate home that exported the questions.
+The notice runs the document's reader once, its answers reach their held tasks through the keyed-answer intake, and the command's one-line result or error is what docstrap shows.
+
 ## Gate defaults (.no-mistakes.yaml)
 
 The tracked [`.no-mistakes.yaml`](../.no-mistakes.yaml) sets `test.evidence.store_in_repo: true` and runs the canonical [shell/workflow lint](../bin/fm-lint.sh) followed by the [Pi production-consumer typecheck](../tests/fm-pi-primary-types.test.sh) in the compiler-owning lint phase.
@@ -2880,6 +2885,8 @@ This section is the single owner of the runner's operating contract.
 - A durable handled acknowledgement stops future source re-announcement, while a record already queued remains under the durable queue's authority until the ordinary drain's sequence-bound post-handling acknowledgement consumes it.
 - By default, a runner releases its claim after one poll; an adapter that opts into `relisten` keeps that runner and claim across empty waits and captured results, adopting a replacement registration only when the registered command is unchanged and the claim still belongs to it.
   A failed relisten check releases the claim; the runner never refreshes its own home lease.
+- An adapter that answers exit 0 to `bin/fm-procevent-<adapter>.sh on-demand` is read only on an explicit `bin/fm-procevent.sh start`: reconcile never launches its registration, `list` reports it idle as `on-demand`, and its captures still take the ordinary capture, keyed-answer, and publication path.
+  The docstrap answer reader is on-demand, so nothing re-reads a project's answer store on the watcher's cadence.
   The `bin/fm-procevent.sh` header owns the exact seam, and [remote secondmates](remote-secondmates.md#how-remote-lines-are-mirrored) owns the reply listener's behavior.
 
 **Reconcile sources**
