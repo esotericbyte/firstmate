@@ -13,7 +13,7 @@ The captain was explicit that nothing should clog what every session loads.
 
 ## 1 The decided shape
 
-Pages push HTTP events from a Web Worker to one Go listener on this machine, the listener writes one journal file, and firstmate primary reads that journal.
+Pages push HTTP events from a Web Worker to one Go listener on this machine, the listener writes a message log, and firstmate primary reads that log and records each message it handles in its own work log.
 
     Lavish board page -> Web Worker -> HTTP POST -> |
                                                     | Go listener (127.0.0.1 only,
@@ -21,9 +21,9 @@ Pages push HTTP events from a Web Worker to one Go listener on this machine, the
                                                     |   reads firstmate records read-only
                                                     |   resolves owner, classifies cases 1-6
                                                     v
-                                              journal file  -- inotify -->  firstmate primary
-                                              (one file,                    handles each entry,
-                                               entries by id)               checks it off by id
+                                              message log  -- inotify -->  firstmate primary
+                                              (listener writes,            handles each entry,
+                                               entries by id)              writes work log by id
 
 There is no separate firstmate copy, no `fm2` home, no combine-by-area stage, and no prioritizer.
 The Claude command prompt is not in the loop; the journal arrives as a durable record plus a wake, the same way firstmate already takes every other non-chat input.
@@ -38,14 +38,18 @@ Nothing is queued in the page or anywhere else for later delivery.
 1.2 The listener.
 The listener binds to this machine only, and it accepts only local events that carry a valid per-session token.
 It reads firstmate's records read-only, which is how it resolves each event's owner and mechanically classifies cases 1 through 6 in section 3.
-It alone has full create, read, update and delete over the messages it receives and over the journal.
+It alone has full create, read, update and delete over the messages it receives and over the message log.
 It never writes into firstmate's records, a worker's steering inbox, or the backlog.
 
 1.3 The journal.
-The journal is one file, and firstmate watches it with inotify; there is no socket.
-Every entry has an id.
-Firstmate primary is the journal's only reader.
-It checks entries off by id as it handles them, and handled entries are garbage collected by docstrap's collector.
+The journal is two files, each with exactly one writer, and there is no socket.
+The message log is written only by the listener, and firstmate watches it with inotify.
+Every message-log entry has an id.
+Firstmate primary is the message log's only reader.
+The work log is written only by firstmate: as it handles a message it appends one work-log entry keyed by that message's id, which is what checking off by id means.
+A message is handled exactly when the work log holds an entry with its id.
+On garbage collection the old files are rotated, and every message-log entry with no matching work-log entry is appended to the new message log with its `original_time` field preserved, so unhandled messages survive rotation and handled ones are dropped.
+Docstrap is kept for bookkeeping and as part of that cleanup.
 The journal also records when a worker goes idle or is stopped by firstmate, so firstmate gets timely notice of messages that could not reach a worker and can restart that worker and relay the messages to it through its ordinary steering path.
 
 1.4 Retiring the polling adapters.
@@ -102,16 +106,19 @@ Q150, verbatim: "Q150. No If go is down this should simply call back to the spa 
 
 Q151, verbatim: "Q151. Right, only on the local machine machine."
 
+Check-off by id, verbatim: "No fristmate can write to a second file. i said "By id" so the resolution is that each entry in the message log has an entry in the work log. On garbage collection the old files are rotated and then unmatched results are appended to mmessage logs with an original_time field preserved."
+
 1. One small push endpoint feeds firstmate's existing intake; there is no separate firstmate copy and no combine-by-area stage (Q145).
 2. Retries are limited, and what fails is written to the journal for firstmate to read rather than retried (Q146).
-3. The journal is one file watched with inotify, not a socket (Q149).
+3. The listener-to-firstmate path is a file watched with inotify, not a socket (Q149).
 4. Journal entries are checked off by id as firstmate handles them and are then garbage collected, with docstrap kept for bookkeeping and cleanup (Q146, Q149).
 5. The journal covers workers going idle or being stopped by firstmate, and firstmate primary is its only user (Q146).
-6. The listener reads firstmate's bookkeeping read-only to organize cases 1 through 6, and has full create, read, update and delete only over messages and the journal (Q146).
+6. The listener reads firstmate's bookkeeping read-only to organize cases 1 through 6, and has full create, read, update and delete only over messages and the message log (Q146).
 7. When the listener is down, the page notifies the user that it needs a restart (Q150).
 8. The endpoint accepts only local events with a per-session token, and binds to this machine only (Q147, Q151).
 9. Each polling adapter is removed once push works for its source (Q148).
-10. Rulings 2, 3, 4, 5 and 8 of 2026-09-30 stand, and ruling 1 stands for prompt content: entries reach firstmate primary as durable records and wakes, never through the Claude command prompt.
+10. The journal is two files: the listener alone writes the message log, firstmate alone writes the work log with one entry per handled message keyed by that message's id, and garbage collection rotates both and carries every unmatched message forward into the new message log with its `original_time` preserved (check-off ruling).
+11. Rulings 2, 3, 4, 5 and 8 of 2026-09-30 stand, and ruling 1 stands for prompt content: entries reach firstmate primary as durable records and wakes, never through the Claude command prompt.
 
 ## 3 The six cases and the event walk-through
 
@@ -142,7 +149,7 @@ What remains is six cases that the listener classifies mechanically from firstma
    A worker that is idle, stopped, or gone is case 5; the entry is marked so firstmate knows it must restart the worker and relay the message.
 8. The listener appends the entry with its own journal id, the event id, the project, the owner, the round, and the case classification, makes the write durable, and only then answers the page with success.
 9. Firstmate's inotify watch on the journal turns the append into a wake.
-10. Firstmate reads every unhandled entry, handles each through its ordinary intake and steering paths, and checks each off by id.
+10. Firstmate reads every message-log entry with no matching work-log entry, handles each through its ordinary intake and steering paths, and appends one work-log entry per handled message keyed by its id.
 
 Case 6 needs no step of its own.
 Every entry already carries its project, so a burst is many independent entries, and one wake may cover several appends; firstmate reads all unhandled entries in one pass and may group them by project for reading, but nothing merges them.
@@ -165,17 +172,19 @@ Firstmate's inference, for the captain's confirmation: the listener journals onl
    Round 3 arrives before round 2 because a retry delayed round 2.
    Both are journaled, round 2 carries the case 4 classification, and firstmate reads the rounds of a source in round order rather than journal order.
 3. Listener restart.
-   The seen-id set and the per-source round record are held in memory, and on start the listener rebuilds both by reading the journal, handled and unhandled entries alike.
-   Garbage collection must therefore keep a handled entry well past the page's limited retry window, so that a retry can never arrive after the entry that would have caught it is gone.
+   The seen-id set and the per-source round record are held in memory, and on start the listener rebuilds both by reading the message log, handled and unhandled entries alike.
+   Rotation drops handled entries, so garbage collection must not rotate away an entry until it is well past the page's limited retry window, so that a retry can never arrive after the entry that would have caught it is gone.
+   Carried-forward entries keep their `original_time`, so the rebuild and firstmate both still see when each message first arrived.
    Events sent while the listener is down are refused, the page retries a limited number of times, and the user is told the listener needs a restart; nothing is queued.
 4. Firstmate offline.
-   Entries keep arriving and wait unhandled in the journal.
-   No inotify watch is running while firstmate is down, so session start must read every unhandled journal entry as part of its startup input, and that read is the only thing that catches them.
-5. Check-off by id while the listener owns the journal.
-   Firstmate's inference, for the captain's confirmation: firstmate never edits the journal file.
-   It records each handled id in its own small check-off record, which is part of the firstmate bookkeeping the listener already reads read-only, and the listener watches that record and marks the matching journal entries handled.
-   That keeps the listener as the journal's only writer, keeps firstmate as the only writer of its own records, and avoids a race between a firstmate append and a listener rewrite of the same file.
-   An entry stays unhandled until its id appears in firstmate's check-off record, so a crash on either side between handling and check-off only causes firstmate to see that entry again, never to lose it.
+   Entries keep arriving in the message log and wait with no matching work-log entry.
+   No inotify watch is running while firstmate is down, so session start must read every message-log entry that has no work-log entry as part of its startup input, and that read is the only thing that catches them.
+   A rotation while firstmate is down loses nothing, because every unmatched entry is carried forward.
+5. Check-off by id while the listener owns the message log.
+   Settled by the captain's check-off ruling: firstmate never edits the message log, and writes its own work log instead.
+   Each handled message gets one work-log entry keyed by its id, so each message-log entry has its match in the work log.
+   That keeps each file with one writer and avoids a race between a firstmate write and a listener write to the same file.
+   A message stays unhandled until its id appears in the work log, so a crash between handling and the work-log append only causes firstmate to see that message again, never to lose it.
 
 ## 4 Why one small endpoint is enough
 
@@ -198,7 +207,7 @@ The design changed several times as the captain refined it, and each change remo
    Page push superseded that entirely.
 3. The proxy reappeared on the far side, then was removed with the copy.
    On 2026-09-30 the goroutine was to proxy into a fork of Claude Code with its own `fm2` home, where workers would talk to a firstmate copy sharing session data but not the session process.
-   Q145 removed the copy, the fork, and the `fm2` home: the listener writes a journal and firstmate primary reads it.
+   Q145 removed the copy, the fork, and the `fm2` home: the listener writes a message log and firstmate primary reads it.
 4. FastAPI was the named delivery surface, and is now Go.
    See ruling 2 of 2026-09-30, which records the stack departure deliberately so it is not mistaken for drift.
 5. A taskwriter with four jobs was specified, then reduced to owner resolution.
@@ -223,7 +232,7 @@ Do not add a page-side queue to paper over it; Q150 ruled that out.
 
 6.2 The listener must not become a second mutating session over the home.
 `bin/fm-lock.sh` holds a per-home lock, and `AGENTS.md` section 3 is explicit that a lock-refused session must not spawn, steer, merge, drain the wake queue, or perform any other fleet mutation.
-The listener stays clear of that boundary because it only reads firstmate's records and only writes its own messages and journal (Q146).
+The listener stays clear of that boundary because it only reads firstmate's records and only writes its own messages and the message log (Q146); the work log it may read is firstmate's own record.
 Any later feature that has the listener write a firstmate record, steer a worker, or touch the backlog crosses that boundary and needs the captain's word.
 
 ## 7 Still open - do not resolve these in passing
@@ -246,13 +255,15 @@ What remains open after these rulings:
 
 7.1 How the per-session token reaches the page, and what a session is: a firstmate session, a listener run, or one page load.
 
-7.2 How docstrap's collector garbage collects handled journal entries.
-The collector is not built (`fork-notes/lifecycles-and-docstrap.md` section 2.4), the roadmap design covers docstrap metadata rows only, and a collector that deletes journal entries would be a second writer beside the listener.
-Whether the collector removes entries itself or tells the listener to remove them, and how long a handled entry is kept, are open; section 3.3(3) sets the floor of well past the page's retry window.
+7.2 Who runs garbage collection, and when.
+The mechanism is settled: rotate the old files and carry every unmatched message forward with its `original_time` preserved.
+What is open is what runs it and how it is triggered, given that docstrap's collector is not built (`fork-notes/lifecycles-and-docstrap.md` section 2.4) and its roadmap design covers docstrap metadata rows only.
+Rotation must also not break the one-writer rule: the new message log is written by the listener, and the new work log by firstmate.
+How long a handled entry is kept before rotation drops it is open; section 3.3(3) sets the floor of well past the page's retry window.
 
-7.3 The confirmations marked in section 3: that firstmate checks off through its own check-off record rather than by editing the journal (section 3.3(5)), and that only workers owning a push source get idle and stop entries (section 3.2).
+7.3 The confirmation marked in section 3.2: that only workers owning a push source get idle and stop entries.
 
-7.4 Where the journal and firstmate's check-off record live, and how firstmate's watcher gains the inotify trigger; nothing in firstmate uses inotify today.
+7.4 Where the message log and the work log live, and how firstmate's watcher gains the inotify trigger; nothing in firstmate uses inotify today.
 
 7.5 How many retries the page makes and over what interval; the rulings say only that retries are limited.
 
