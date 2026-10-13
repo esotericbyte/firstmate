@@ -189,6 +189,17 @@
 # the claim after that one result, exactly as before. The runner still does not
 # refresh the owner lease, so a home that has gone still ends the poll.
 #
+# Starting a runner is adapter-owned through the same kind of seam. A built-in
+# adapter that answers exit 0 to `bin/fm-procevent-<adapter>.sh on-demand`
+# declares that its source is read only when something outside this runner asks:
+# its registration exists so that an explicit `start` can capture, feed, and
+# announce a reading through the ordinary path, and `reconcile` never launches
+# it, so nothing re-reads that source on the watcher's cadence. `list` reports
+# such an idle source as `on-demand` rather than `none`. A missing command, an
+# error, or any other exit keeps reconcile's ordinary relaunch, so an adapter
+# with no notion of on-demand reading needs no change. External bindings
+# deliberately receive no on-demand operation.
+#
 # Keyed captain answers from built-in adapters use one more seam of the same kind,
 # and this runner still decides nothing about them. Some sources carry the
 # captain's answer to a captain-held task. What such an answer MEANS is owned
@@ -408,6 +419,22 @@ adapter_self_announcing() {  # <adapter>
   script=$(adapter_script "$1")
   [ -f "$script" ] && [ ! -L "$script" ] || return 1
   "$script" self-announcing >/dev/null 2>&1
+}
+
+# Ask a built-in registration's adapter whether its source runs only on an
+# explicit `start` (see the on-demand note in the header). Exit 0 is the only
+# declaration; everything else - including an extension registration, a missing
+# adapter, or an adapter without the command - keeps reconcile's ordinary
+# relaunch. Call with the source lock held.
+source_on_demand_locked() {  # <source-id>
+  local adapter script
+  fm_procevent_extension_registration_load_locked "$STATE" "$1"
+  [ "$?" -eq 1 ] || return 1
+  adapter=$(read_adapter "$1" 2>/dev/null) || return 1
+  fm_procevent_adapter_valid "$adapter" || return 1
+  script=$(adapter_script "$adapter")
+  [ -f "$script" ] && [ ! -L "$script" ] || return 1
+  "$script" on-demand >/dev/null 2>&1
 }
 
 source_file()  { printf '%s/%s.source\n' "$REG" "$1"; }
@@ -1789,6 +1816,9 @@ cmd_reconcile() {
           uncertain=$((uncertain + 1))
           report_stranded_source "$id" "$FM_PROCEVENT_CLAIM_TOKEN" \
             "$(stranded_reused_pid_detail "$id")" || true
+        elif [ "$claim_state" -eq 1 ] && source_on_demand_locked "$id"; then
+          # Read only on an explicit start, never on this cycle's cadence.
+          :
         elif [ "$claim_state" -eq 1 ]; then
           if ! cleanup_extension_registration_invocations_locked "$id"; then
             uncertain=$((uncertain + 1))
@@ -2454,6 +2484,8 @@ cmd_list() {
         owner=none
         if fm_procevent_claim_undisplaceable_locked "$id"; then
           owner=orphaned
+        elif source_on_demand_locked "$id"; then
+          owner=on-demand
         fi
         ;;
       3) owner=orphaned ;;
