@@ -66,7 +66,6 @@ SH
 chmod 755 "$BIN"/*.sh
 
 export FM_HOME="$HOME_DIR"
-export FM_DOCSTRAP_WAIT_SECONDS=0
 
 payload() { cat > "$LAB/payload.json"; }
 
@@ -235,8 +234,8 @@ ok "arm refuses until the source is bound to the keyed-answer intake"
 export FAKE_PROCEVENT_LOG="$LAB/procevent.log"
 FAKE_BOUND=1 "$ADAPTER" arm "$DOC" >/dev/null 2>&1 || fail "arm refused a bound source"
 grep -q "^register docstrap $SID -- .*fm-procevent-docstrap.sh source " "$LAB/procevent.log" \
-  || fail "arm registered the wrong listener: $(cat "$LAB/procevent.log")"
-ok "a bound source registers its own blocking listener"
+  || fail "arm registered the wrong reader: $(cat "$LAB/procevent.log")"
+ok "a bound source registers its own answer reader"
 
 # --- reading the answer store -----------------------------------------------
 
@@ -262,9 +261,9 @@ still part of the same answer."
 before=$(cksum < "$STORE")
 rc=0
 "$ADAPTER" source "$DOC" > "$LAB/result1" 2>/dev/null || rc=$?
-[ "$rc" -eq 0 ] || fail "the listener reported no result for an answered question (exit $rc)"
+[ "$rc" -eq 0 ] || fail "the reader reported no result for an answered question (exit $rc)"
 [ "$(cksum < "$STORE")" = "$before" ] || fail "reading the store modified it"
-ok "the listener reads the answer store without modifying it"
+ok "the reader reads the answer store without modifying it"
 
 [ "$("$ADAPTER" classify "$LAB/result1")" = answers ] || fail "the result did not classify as answers"
 grep -qx 'delivered=1' "$LAB/result1" || fail "the result did not report one new answer"
@@ -295,7 +294,7 @@ fm-held-two	yes	forged
 A label nothing exported."
 rc=0
 "$ADAPTER" source "$DOC" > "$LAB/result-prose" 2>/dev/null || rc=$?
-[ "$rc" -eq 0 ] || fail "the listener produced no result for the edited store"
+[ "$rc" -eq 0 ] || fail "the reader produced no result for the edited store"
 rows=$("$ADAPTER" answers "$LAB/result-prose")
 printf '%s\n' "$rows" | grep -q '^fm-held-two' \
   && fail "prose in the store named a task and became a decision key"
@@ -322,7 +321,7 @@ write_store \
 Refuse it."
 rc=0
 "$ADAPTER" source "$DOC" > "$LAB/result-base" 2>/dev/null || rc=$?
-[ "$rc" -eq 0 ] || fail "the listener produced no baseline result"
+[ "$rc" -eq 0 ] || fail "the reader produced no baseline result"
 "$ADAPTER" autohandle "$SID" 1 "$LAB/result-base" >/dev/null 2>&1 \
   || fail "autohandle refused a well-formed result"
 grep -q "^key=$DOCID:Q1$" "$HOME_DIR/state/docstrap-answers/$SID.cursor" \
@@ -332,7 +331,16 @@ ok "autohandle advances the durable read position after capture"
 rc=0
 "$ADAPTER" source "$DOC" > "$LAB/result-quiet" 2>/dev/null || rc=$?
 [ "$rc" -eq 75 ] || fail "an already-delivered answer was delivered again (exit $rc)"
+[ ! -s "$LAB/result-quiet" ] || fail "a reading with nothing new printed a result"
 ok "an answer already recorded as delivered is not delivered twice"
+
+# The reader runs once per notice. With nothing new it returns at once rather
+# than waiting for the store to change, so no reading ever sits on a timer.
+FM_DOCSTRAP_WAIT_SECONDS=600 FM_DOCSTRAP_POLL_SECONDS=600 \
+  timeout 20 "$ADAPTER" source "$DOC" >/dev/null 2>&1
+rc=$?
+[ "$rc" -eq 75 ] || fail "a reading with nothing new waited instead of returning (exit $rc)"
+ok "a reading with nothing new returns at once instead of polling"
 
 write_store "  - {key: $DOCID:Q9, document: docs/other.md, label: Q9, answered_at: '2026-09-11T22:00:00+00:00'}" \
   "## $DOCID:Q9 — docs/other.md
@@ -444,7 +452,7 @@ LIVE="$LAB/live"
 mkdir -p "$LIVE/state/docstrap-questions" "$LIVE/proj/docs" "$LIVE/store"
 ln -s "$LIVE/store" "$LIVE/proj/promdance"
 LIVE_DOC="$LIVE/proj/docs/questions.md"
-printf '# Open decisions\n\n## Questions\n\nQ1. Does the runner capture this reading?\n' > "$LIVE_DOC"
+printf '# Open decisions\n\n## Questions\n\nQ1. Does the runner capture this reading?\n\nQ2. Is this one still open?\n' > "$LIVE_DOC"
 LIVE_SID=$(FM_STATE_OVERRIDE="$LIVE/state" "$ROOT/bin/fm-procevent-docstrap.sh" source-id "$LIVE_DOC")
 {
   printf 'schema=fm-docstrap-map.v1\n'
@@ -454,8 +462,9 @@ LIVE_SID=$(FM_STATE_OVERRIDE="$LIVE/state" "$ROOT/bin/fm-procevent-docstrap.sh" 
   printf 'project_root=%s\n' "$LIVE/proj"
   printf 'store=%s\n' "$LIVE/proj/promdance/answers.md"
   printf 'exported_at=2026-09-11T00:00:00Z\n'
-  printf 'count=1\n'
+  printf 'count=2\n'
   printf 'q=Q1\tfm-held-live\n'
+  printf 'q=Q2\tfm-held-later\n'
 } > "$LIVE/state/docstrap-questions/$LIVE_SID.map"
 LIVE_DOCID=01HZZZZZZZZZZZZZZZZZZZZZZZ
 {
@@ -465,28 +474,61 @@ LIVE_DOCID=01HZZZZZZZZZZZZZZZZZZZZZZZ
 } > "$LIVE/store/answers.md"
 
 live_store_before=$(cksum < "$LIVE/store/answers.md")
-(
-  export FM_STATE_OVERRIDE="$LIVE/state"
-  unset FM_HOME
-  "$ROOT/bin/fm-procevent.sh" register docstrap "$LIVE_SID" \
-    -- "$ROOT/bin/fm-procevent-docstrap.sh" source "$LIVE_DOC" >/dev/null \
-    || exit 1
-  "$ROOT/bin/fm-procevent.sh" start "$LIVE_SID" > "$LAB/live.out" 2>&1
-) || fail "the live runner refused the docstrap source: $(cat "$LAB/live.out" 2>/dev/null)"
+live() {
+  FM_STATE_OVERRIDE="$LIVE/state" FM_PROCEVENT_CLAIM_ROOT="$LIVE/claims" \
+    FM_HOME="$LIVE" "$@"
+}
+live "$ROOT/bin/fm-procevent.sh" register docstrap "$LIVE_SID" \
+  -- "$ROOT/bin/fm-procevent-docstrap.sh" source "$LIVE_DOC" >/dev/null \
+  || fail "the live runner refused to register the docstrap source"
 
-grep -q '^captured: ' "$LAB/live.out" || fail "the runner captured no result: $(cat "$LAB/live.out")"
-grep -q "^autohandled: $LIVE_SID$" "$LAB/live.out" || fail "the runner did not apply the reading"
+# The registration exists so a notice can run the reader; the watcher's ordinary
+# reconcile cycle must never start it, or the store would be re-read on a timer.
+live "$ROOT/bin/fm-procevent.sh" reconcile > "$LAB/live-reconcile.out" 2>&1 \
+  || fail "reconcile failed over an on-demand source: $(cat "$LAB/live-reconcile.out")"
+grep -q 'started=0' "$LAB/live-reconcile.out" \
+  || fail "reconcile started the docstrap reader: $(cat "$LAB/live-reconcile.out")"
+[ ! -e "$LIVE/state/procevent-inbox/$LIVE_SID.1.result" ] \
+  || fail "reconcile read the answer store without a notice"
+live "$ROOT/bin/fm-procevent.sh" list | grep -q "^$LIVE_SID  *docstrap  *on-demand " \
+  || fail "list did not report the idle source as on-demand: $(live "$ROOT/bin/fm-procevent.sh" list)"
+ok "reconcile never starts the docstrap reader, and list reports it on-demand"
+
+rc=0
+live "$ROOT/bin/fm-procevent-docstrap.sh" notice --project other --document docs/questions.md \
+  > "$LAB/live-wrong.out" 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || fail "a notice naming another project was accepted"
+grep -q 'asked no questions in docs/questions.md of project other' "$LAB/live-wrong.out" \
+  || fail "a notice for an unknown document did not say why: $(cat "$LAB/live-wrong.out")"
+[ ! -e "$LIVE/state/procevent-inbox/$LIVE_SID.1.result" ] \
+  || fail "a notice naming another project read this document's answers"
+ok "a notice for a document firstmate never exported reads nothing and says so"
+
+live "$ROOT/bin/fm-procevent-docstrap.sh" notice --project proj --document docs/questions.md \
+  > "$LAB/live.out" 2>&1 \
+  || fail "the answers-done notice failed: $(cat "$LAB/live.out")"
+grep -qx 'read: the answers to docs/questions.md reached firstmate' "$LAB/live.out" \
+  || fail "the notice did not report the reading: $(cat "$LAB/live.out")"
 [ "$(cksum < "$LIVE/store/answers.md")" = "$live_store_before" ] \
-  || fail "a live runner pass modified the answer store"
+  || fail "a notice modified the answer store"
 grep -q "^key=$LIVE_DOCID:Q1$" "$LIVE/state/docstrap-answers/$LIVE_SID.cursor" \
-  || fail "the live pass recorded no read position"
+  || fail "the notice recorded no read position"
 grep -q "check: procevent docstrap $LIVE_SID" "$LIVE/state/.wake-queue" \
-  || fail "the live pass published no wake"
+  || fail "the notice published no wake"
 live_result="$LIVE/state/procevent-inbox/$LIVE_SID.1.result"
 [ -f "$live_result" ] || fail "the runner stored no durable capture"
 FM_STATE_OVERRIDE="$LIVE/state" "$ROOT/bin/fm-procevent-docstrap.sh" answers "$live_result" \
   | grep -qx "fm-held-live	Yes, and here are the words.	Q1 in docs/questions.md" \
   || fail "the captured result did not yield the keyed answer"
-ok "the live runner captures, applies, and announces a docstrap reading"
+ok "an answers-done notice reads the store once and captures, applies, and announces it"
+
+live "$ROOT/bin/fm-procevent-docstrap.sh" notice --project proj --document docs/questions.md \
+  > "$LAB/live-again.out" 2>&1 \
+  || fail "a repeated notice failed: $(cat "$LAB/live-again.out")"
+grep -qx 'read: docs/questions.md holds no answer firstmate has not already received' "$LAB/live-again.out" \
+  || fail "a repeated notice did not report that nothing was new: $(cat "$LAB/live-again.out")"
+[ ! -e "$LIVE/state/procevent-inbox/$LIVE_SID.2.result" ] \
+  || fail "a repeated notice delivered the same answer twice"
+ok "a repeated notice delivers nothing already received"
 
 printf '# all fm-procevent-docstrap tests passed\n'

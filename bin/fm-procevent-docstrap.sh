@@ -6,6 +6,7 @@
 # Usage:
 #   fm-procevent-docstrap.sh export <document-path> <payload.json>
 #   fm-procevent-docstrap.sh arm <document-path>
+#   fm-procevent-docstrap.sh notice --project <project-key> --document <document>
 #   fm-procevent-docstrap.sh source <document-path>
 #   fm-procevent-docstrap.sh source-id <document-path>
 #   fm-procevent-docstrap.sh classify <result-file>
@@ -14,6 +15,7 @@
 #   fm-procevent-docstrap.sh autohandle <source-id> <sequence> <result-file>
 #   fm-procevent-docstrap.sh read <result-file>
 #   fm-procevent-docstrap.sh retire <document-path>
+#   fm-procevent-docstrap.sh on-demand
 #
 # TRAFFIC IS ONE-WAY, AND THAT IS THE WHOLE POINT. Firstmate WRITES a question
 # document into one of the captain's project repositories and READS his answers
@@ -30,13 +32,22 @@
 #            that derived questions from hold reasons would emit prose failing
 #            the captain's question rules on its first line. What a script CAN
 #            check, it checks - see THE QUESTION RULES below.
-# arm        Register the blocking answer listener for an exported document.
-#            It REFUSES unless the source is already bound to the keyed-answer
-#            intake, so a question can never be asked through a channel whose
-#            answer would have nowhere to go.
-# source     The registered listener `arm` publishes, not a command to run in a
-#            conversational turn. It blocks until the answer store changes, then
-#            prints one result and exits.
+# arm        Register the answer reader for an exported document. It REFUSES
+#            unless the source is already bound to the keyed-answer intake, so a
+#            question can never be asked through a channel whose answer would
+#            have nowhere to go. Arming starts nothing: the reader runs only when
+#            a notice arrives.
+# notice     The captain's "answers done" notice from docstrap, naming the
+#            project key his answer store declares and the document path as
+#            that store records it. It finds the one armed document matching
+#            both and runs its reader once through `bin/fm-procevent.sh start`,
+#            so the reading is captured, its answers are fed to the keyed-answer
+#            intake, and its wake is published on the runner's ordinary path.
+#            It prints one line saying what happened, and exits non-zero with
+#            the reason when nothing could be read, so docstrap can show it.
+# source     The registered reader `notice` runs, not a command to run in a
+#            conversational turn. It reads the answer store once, prints one
+#            result when there is news, and exits 75 when there is none.
 # classify   Print what a captured result is: answers, continuity-broken, or
 #            malformed.
 # terminal   Exit 0 when the captured result proves every exported question now
@@ -50,8 +61,15 @@
 #            Advancing a read position carries no judgement, so it belongs in
 #            code rather than in an agent's memory.
 # read       Present one already-captured result for a handler, without arming,
-#            polling, or changing anything.
+#            reading the store, or changing anything.
 # retire     Retire the registration and drop this source's private records.
+# on-demand  Exit 0: this adapter's source is read only on a notice, so the
+#            runner's reconcile cycle never starts it (see bin/fm-procevent.sh).
+#
+# NOTHING READS THE STORE ON A TIMER. docstrap saves the captain's edits as he
+# types, so a store that changed is not a store he has finished with. The one
+# signal that he has finished is the "answers done" prompt docstrap offers per
+# document, which runs `notice`; until then the store is not read at all.
 #
 # THE KEY IS NEVER READ OUT OF THE DOCUMENT OR THE STORE.
 # docstrap keys an answer on `<document-id>:<label>` - its own identifiers, for
@@ -67,9 +85,9 @@
 # about: `source` only ever reads it. Nothing is cleared, moved, or rewritten to
 # discover an answer, and re-running `source` over an unchanged store produces
 # the same reading. The durable read position advances in `autohandle`, AFTER
-# the runner has captured the result, so a listener that dies between reading
-# and capture loses nothing: the next listener reads the same answers again, and
-# the keyed intake reports the replay as already closed.
+# the runner has captured the result, so a reader that dies between reading and
+# capture loses nothing: the next notice reads the same answers again, and the
+# keyed intake reports the replay as already closed.
 #
 # Do not describe this path as at-least-once, no-loss, or exactly-once. What is
 # proved here is narrower and worth stating exactly: the store is read without
@@ -150,12 +168,9 @@ REFERENCE_FLAG="$CONFIG/docstrap-references"
 STORE_BASENAME=answers.md
 PROMDANCE_DIRNAME=promdance
 
-# The listener's own window. It closes with no output rather than blocking
-# forever, so a retired source stops cleanly and the runner's reconcile cycle
-# owns restarting a live one.
-WAIT_SECONDS=${FM_DOCSTRAP_WAIT_SECONDS:-240}
-POLL_SECONDS=${FM_DOCSTRAP_POLL_SECONDS:-5}
-WINDOW_CLOSED_EMPTY=75
+# A reading that found nothing new prints nothing and exits with this status,
+# which the runner treats as a clean empty result.
+NOTHING_NEW=75
 
 # An answer is one tab-separated field at the keyed intake, which accepts a
 # decision of at most 8192 bytes. A longer answer is delivered cut at this bound
@@ -462,7 +477,7 @@ read_ledger() {  # <source-id> <destination>
   cat -- "$path" > "$2"
 }
 
-# --- the listener -----------------------------------------------------------
+# --- the reader -------------------------------------------------------------
 
 emit_result() {  # <sid> <status> <project> <doc-id> <digest> <answered> <new> <reason> <payload-file>
   local sid=$1 status=$2 project=$3 doc_id=$4 digest=$5 answered=$6 new=$7 reason=$8 payload=$9
@@ -552,12 +567,9 @@ evaluate_store() {  # <source-id> <scan-file> <digest> <work-dir>
 }
 
 cmd_source() {
-  local doc=${1-} sid deadline digest work rc
+  local doc=${1-} sid digest work rc
   [ -n "$doc" ] || usage
   [ "$#" -eq 1 ] || usage
-  case "$WAIT_SECONDS" in ''|*[!0-9]*) die "FM_DOCSTRAP_WAIT_SECONDS must be whole seconds" ;; esac
-  case "$POLL_SECONDS" in ''|*[!0-9]*) die "FM_DOCSTRAP_POLL_SECONDS must be whole seconds" ;; esac
-  [ "$POLL_SECONDS" -ge 1 ] || die "FM_DOCSTRAP_POLL_SECONDS must be at least one second"
   sid=$(cmd_source_id "$doc") || exit 1
   load_map "$sid"
 
@@ -566,37 +578,87 @@ cmd_source() {
   trap "rm -rf -- '$work'" EXIT
   read_cursor "$sid" "$work/cursor-keys"
 
-  deadline=$(( $(date +%s) + WAIT_SECONDS ))
-  while :; do
-    if [ -f "$MAP_STORE" ] && [ ! -L "$MAP_STORE" ]; then
-      digest=$(sha256_file "$MAP_STORE")
-      if [ "$digest" != "$CURSOR_DIGEST" ]; then
-        rc=0
-        store_scan "$MAP_STORE" "$MAP_DOCUMENT" "$MAX_ANSWER_BYTES" > "$work/scan" || rc=$?
-        if [ "$rc" -ne 0 ]; then
-          : > "$work/empty"
-          emit_result "$sid" continuity-broken "$CURSOR_PROJECT" "$CURSOR_DOC_ID" "$digest" 0 0 \
-            "the answer store no longer parses as a docstrap answer file" "$work/empty"
-          return 0
-        fi
-        if evaluate_store "$sid" "$work/scan" "$digest" "$work"; then
-          return 0
-        fi
-        # The store changed for some other document. Remember the new digest so
-        # the same unrelated write is not re-read every pass, and leave the
-        # observed-key set alone: only a delivery advances that.
-        CURSOR_DIGEST=$digest
-      fi
-    elif [ "$CURSOR_PRESENT" -eq 1 ] && [ -n "$CURSOR_DIGEST" ]; then
+  if [ -f "$MAP_STORE" ] && [ ! -L "$MAP_STORE" ]; then
+    digest=$(sha256_file "$MAP_STORE")
+    [ "$digest" != "$CURSOR_DIGEST" ] || return "$NOTHING_NEW"
+    rc=0
+    store_scan "$MAP_STORE" "$MAP_DOCUMENT" "$MAX_ANSWER_BYTES" > "$work/scan" || rc=$?
+    if [ "$rc" -ne 0 ]; then
       : > "$work/empty"
-      emit_result "$sid" continuity-broken "$CURSOR_PROJECT" "$CURSOR_DOC_ID" '' 0 0 \
-        "the answer store this source had already read is gone: $MAP_STORE" "$work/empty"
+      emit_result "$sid" continuity-broken "$CURSOR_PROJECT" "$CURSOR_DOC_ID" "$digest" 0 0 \
+        "the answer store no longer parses as a docstrap answer file" "$work/empty"
       return 0
     fi
-    [ "$(date +%s)" -lt "$deadline" ] || break
-    sleep "$POLL_SECONDS"
+    evaluate_store "$sid" "$work/scan" "$digest" "$work" && return 0
+  elif [ "$CURSOR_PRESENT" -eq 1 ] && [ -n "$CURSOR_DIGEST" ]; then
+    : > "$work/empty"
+    emit_result "$sid" continuity-broken "$CURSOR_PROJECT" "$CURSOR_DOC_ID" '' 0 0 \
+      "the answer store this source had already read is gone: $MAP_STORE" "$work/empty"
+    return 0
+  fi
+  return "$NOTHING_NEW"
+}
+
+# The project key an answer store declares, or nothing when it cannot be read.
+store_project() {  # <store>
+  [ -f "$1" ] && [ ! -L "$1" ] || return 1
+  store_scan "$1" '' "$MAX_ANSWER_BYTES" 2>/dev/null | awk -F'\t' '$1 == "project" { print $2; exit }'
+}
+
+# Run one armed document's reader once, on the captain's "answers done" notice.
+# The document is named the way docstrap's own store names it, so the match is
+# against this home's private export records: the recorded project-relative
+# document path, and the project key the recorded store declares. A document
+# firstmate never exported, or one armed in two projects that declare the same
+# key, reads nothing.
+cmd_notice() {
+  local project='' document='' rec sid='' matches=0 out rc=0 durable
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --project) [ "$#" -ge 2 ] || usage; project=$2; shift 2 ;;
+      --document) [ "$#" -ge 2 ] || usage; document=$2; shift 2 ;;
+      *) usage ;;
+    esac
   done
-  return "$WINDOW_CLOSED_EMPTY"
+  [ -n "$project" ] && [ -n "$document" ] || usage
+  case "$project$document" in *$'\n'*|*"$TAB"*) die "the notice names a project or document with a control character" ;; esac
+
+  for rec in "$MAP_DIR"/docstrap-*.map; do
+    [ -f "$rec" ] && [ ! -L "$rec" ] || continue
+    [ "$(read_record_field "$rec" schema 2>/dev/null)" = fm-docstrap-map.v1 ] || continue
+    [ "$(read_record_field "$rec" document 2>/dev/null)" = "$document" ] || continue
+    [ "$(store_project "$(read_record_field "$rec" store 2>/dev/null)")" = "$project" ] || continue
+    sid=$(read_record_field "$rec" source_id 2>/dev/null) || continue
+    validate_source_id "$sid" || continue
+    matches=$((matches + 1))
+  done
+  [ "$matches" -gt 0 ] \
+    || die "firstmate asked no questions in $document of project $project, so nothing was read"
+  [ "$matches" -eq 1 ] \
+    || die "$document is exported in more than one project declaring $project; nothing was read"
+
+  out=$("$SCRIPT_DIR/fm-procevent.sh" start "$sid" 2>&1) || rc=$?
+  case "$out" in
+    *"source is not registered"*)
+      die "the questions in $document are not armed, or every one of them was already answered" ;;
+    *"already owned: $sid"*)
+      die "firstmate is already reading $document; press answers done again in a moment" ;;
+  esac
+  [ "$rc" -eq 0 ] || die "firstmate could not read the answers to $document: $(printf '%s\n' "$out" | tail -1)"
+  durable=$(printf '%s\n' "$out" | sed -n 's/^captured: //p' | head -1)
+  if [ -n "$durable" ]; then
+    # A continuity break is captured and announced like any reading, but it
+    # delivered nothing, so the notice reports it as the failure it is.
+    [ "$(classify_result "$durable")" = answers ] \
+      || die "firstmate stopped trusting the answer store and read nothing from it: $(read_record_field "$durable" reason 2>/dev/null || true)"
+    printf 'read: the answers to %s reached firstmate\n' "$document"
+    return 0
+  fi
+  case "$out" in
+    *"no-result: $sid (exit $NOTHING_NEW)"*)
+      printf 'read: %s holds no answer firstmate has not already received\n' "$document" ;;
+    *) die "firstmate could not read the answers to $document: $(printf '%s\n' "$out" | tail -1)" ;;
+  esac
 }
 
 # --- captured-result commands -----------------------------------------------
@@ -1139,5 +1201,7 @@ case "${1-}" in
   autohandle) shift; cmd_autohandle "$@" ;;
   read)       shift; cmd_read "$@" ;;
   retire)     shift; cmd_retire "$@" ;;
+  notice)     shift; cmd_notice "$@" ;;
+  on-demand)  shift; [ "$#" -eq 0 ] || usage; exit 0 ;;
   *) die "unknown command: $1" ;;
 esac

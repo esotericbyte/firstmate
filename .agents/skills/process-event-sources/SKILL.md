@@ -68,6 +68,7 @@ bin/fm-procevent-docstrap.sh arm <document-path>
 ```
 
 The destination path is a required argument with no default, and `arm` refuses until the source is bound, so the ordering rule above is enforced rather than remembered.
+Arming starts no listener and nothing reads the answer store on a timer: the reader runs once each time the captain presses docstrap's "answers done" prompt, which runs `bin/fm-procevent-docstrap.sh notice`, so `list` reporting the source `on-demand` rather than `live` is its healthy idle state and needs no reconcile.
 You compose the payload, exactly as you compose a bearings board's: the script refuses a question that is not one interrogative sentence, one joining two askable things with "and", and one offering "A or B", but which questions are worth the captain's time and what order makes later ones moot stay yours.
 The adapter's header owns the payload schema, the private label-to-task record, the non-destructive read, and the opt-in context references; `captain-hold-lifecycle` still owns what an answer means.
 
