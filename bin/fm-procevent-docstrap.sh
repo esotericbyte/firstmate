@@ -45,6 +45,10 @@
 #            intake, and its wake is published on the runner's ordinary path.
 #            It prints one line saying what happened, and exits non-zero with
 #            the reason when nothing could be read, so docstrap can show it.
+#            When the document is a page holding docstrap's task tool in this
+#            home's docstrap project (<data>/docstrap), the notice first takes
+#            in its task decisions - see TASK DECISIONS below - and a task page
+#            with no exported questions needs no armed source.
 # source     The registered reader `notice` runs, not a command to run in a
 #            conversational turn. It reads the answer store once, prints one
 #            result when there is news, and exits 75 when there is none.
@@ -65,6 +69,23 @@
 # retire     Retire the registration and drop this source's private records.
 # on-demand  Exit 0: this adapter's source is read only on a notice, so the
 #            runner's reconcile cycle never starts it (see bin/fm-procevent.sh).
+#
+# TASK DECISIONS ARE RECORDED AND ANNOUNCED, NEVER ACTED ON.
+# docstrap's task tool stores one decision per task in the same answer store,
+# under the label `task/<task-id>`: "action: <action>" on the prose's first line
+# and an optional note after a blank line, written submitted, with a newer
+# decision superseding the old one. On a notice for that page, every submitted
+# decision whose submitted_at is not yet in the task's
+# <data>/task-census/recommendations/<task-id>.yaml as a `by: captain` entry's
+# `decided_at` is appended there, dated by that day; bin/fm-task-export.sh then
+# re-runs so the page shows it as the latest recommendation, and one `check`
+# wake lists each new decision (task id, action, note), marking any task no
+# longer open. Nothing else changes: no task, hold, or backlog item is touched,
+# because firstmate acts on each decision by itself afterwards. The store is
+# only read, a notice with nothing new records and wakes nothing, and a wake
+# that cannot be appended rolls the histories back so the next notice retries.
+# A row with no recognised action or a task id unsafe as a file name is named
+# on stderr and not recorded.
 #
 # NOTHING READS THE STORE ON A TIMER. docstrap saves the captain's edits as he
 # types, so a store that changed is not a store he has finished with. The one
@@ -165,6 +186,11 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 MAP_DIR="$STATE/docstrap-questions"
 CURSOR_DIR="$STATE/docstrap-answers"
 REFERENCE_FLAG="$CONFIG/docstrap-references"
+TASK_SITE="$DATA/docstrap"
+TASK_STORE="$TASK_SITE/promdance/answers.md"
+TASK_RECS="$DATA/task-census/recommendations"
+TASK_DECISIONS_LOCK="$STATE/.task-decisions.lock"
+TASK_ACTIONS="close-done close-duplicate close-obsolete reshape dispatch hold ask keep"
 STORE_BASENAME=answers.md
 PROMDANCE_DIRNAME=promdance
 
@@ -294,20 +320,27 @@ resolve_project_root() {  # <absolute document path>
 # Read one project answer store and report only what concerns one document.
 # Prints `project`, `rows`, `unreadable`, and one tab-separated `answer` record
 # per matching row, with the answer text collapsed to a single line. It reads
-# only the two fields it needs out of each flow-style index row rather than
+# only the fields it needs out of each flow-style index row rather than
 # pretending to be a YAML parser, and it reproduces docstrap's own body-section
 # rule exactly: a `## <key>` heading opens a section only when the key is two
 # colon-separated runs with no whitespace, so an ordinary heading written inside
 # an answer stays part of that answer.
 #
+# A row labelled `task/<task-id>` is a task tool decision, not an answer: it is
+# never reported as one. With mode `decisions`, the scan reports only those,
+# one tab-separated `decision` record per submitted row - doc id, task id,
+# submitted_at, the action named on the prose's first line ("" when there is
+# none), and the note with backslash and newline escaped as `\\` and `\n`.
+#
 # Exit 1 when the store cannot be opened and 2 when it does not parse as an
 # answer file at all; the caller turns either into a continuity break rather
 # than reading past it.
-store_scan() {  # <store> <document display path> <max answer bytes>
+store_scan() {  # <store> <document display path> <max answer bytes> [answers|decisions]
   perl -e '
     use strict; use warnings;
     no warnings "utf8";
-    my ($path, $want_document, $max) = @ARGV;
+    my ($path, $want_document, $max, $mode) = @ARGV;
+    $mode = "answers" unless defined $mode;
     my $SQ = chr(39);
     # Read as characters, not bytes: docstrap writes the body section heading
     # with an em dash, and a byte-wise read cannot recognize it. Malformed bytes
@@ -375,7 +408,12 @@ store_scan() {  # <store> <document display path> <max answer bytes>
         my $key = flow_field($body, "key", $SQ);
         my $document = flow_field($body, "document", $SQ);
         if (!defined $key || $key !~ /\A[^\s:]+:[^\s:]+\z/) { $unreadable++; next }
-        push @rows, { key => $key, document => defined $document ? $document : "" };
+        my %row = (key => $key, document => defined $document ? $document : "");
+        for my $f (qw(submitted submitted_at answered_at)) {
+          my $v = flow_field($body, $f, $SQ);
+          $row{$f} = defined $v ? $v : "";
+        }
+        push @rows, \%row;
         next;
       }
     }
@@ -399,6 +437,28 @@ store_scan() {  # <store> <document display path> <max answer bytes>
       next unless $row->{document} eq $want_document;
       my ($doc_id, $label) = split /:/, $row->{key}, 2;
       my $text = exists $section{ $row->{key} } ? join("\n", @{ $section{ $row->{key} } }) : "";
+      # A decision made in the task tool is never an answer to a question.
+      if ($label =~ m{\Atask/(.*)\z}) {
+        my $task = $1;
+        next unless $mode eq "decisions" && $row->{submitted} eq "true";
+        # The decision prose docstrap writes: "action: <action>" alone on its
+        # first line, then the note after one blank line.
+        $text =~ s/\r//g;
+        $text =~ s/\A\s+//; $text =~ s/\s+\z//;
+        my ($first, $note) = split /\n/, $text, 2;
+        $first = "" unless defined $first;
+        $note = "" unless defined $note;
+        my $action = $first =~ /\Aaction: (\S+)\s*\z/ ? $1 : "";
+        $note =~ s/\A\s+//; $note =~ s/\s+\z//;
+        $note =~ s/[\x00-\x09\x0b-\x1f\x7f]/ /g;
+        $note =~ s/\\/\\\\/g; $note =~ s/\n/\\n/g;
+        my $stamp = length $row->{submitted_at} ? $row->{submitted_at} : $row->{answered_at};
+        $stamp =~ s/[\x00-\x1f\x7f]//g;
+        $task =~ s/[\x00-\x1f\x7f]/ /g;
+        print "decision\t$doc_id\t$task\t$stamp\t$action\t$note\n";
+        next;
+      }
+      next if $mode eq "decisions";
       $text =~ s/[\x00-\x1f\x7f]/ /g;
       $text =~ s/\s+/ /g;
       $text =~ s/\A\s+//; $text =~ s/\s+\z//;
@@ -420,7 +480,7 @@ store_scan() {  # <store> <document display path> <max answer bytes>
       }
       print "answer\t$row->{key}\t$doc_id\t$label\t$text\n";
     }
-  ' "$1" "$2" "$3"
+  ' "$1" "$2" "$3" "${4:-answers}"
 }
 
 # --- cursor and delivery ledger ---------------------------------------------
@@ -605,6 +665,154 @@ store_project() {  # <store>
   store_scan "$1" '' "$MAX_ANSWER_BYTES" 2>/dev/null | awk -F'\t' '$1 == "project" { print $2; exit }'
 }
 
+# --- task tool decisions -----------------------------------------------------
+
+# A page holding docstrap's task tool, in this home's own docstrap project, under
+# the project key that project's answer store declares. The tool reads the
+# tasks.json bin/fm-task-export.sh writes there, so that project is the only
+# place such a page can be.
+task_page_matches() {  # <project> <document>
+  local project=$1 document=$2 page
+  case "$document" in ''|/*|..|../*|*/..|*/../*) return 1 ;; esac
+  page="$TASK_SITE/$document"
+  [ -f "$page" ] && [ ! -L "$page" ] || return 1
+  grep -Eq '^(```+|:::+)\{docstrap-tasks\}' "$page" || return 1
+  [ "$(store_project "$TASK_STORE")" = "$project" ]
+}
+
+load_wake_lib() {
+  [ "${FM_DOCSTRAP_WAKE_LIB:-}" = 1 ] && return 0
+  [ -r "$SCRIPT_DIR/fm-wake-lib.sh" ] || return 1
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh" || return 1
+  FM_DOCSTRAP_WAKE_LIB=1
+}
+
+decision_note() {  # <escaped note>; undo store_scan's `\\` and `\n` escapes
+  printf '%s' "$1" | perl -pe 's/\\(\\|n)/$1 eq "n" ? "\n" : "\\"/ge'
+}
+
+# Restore every recommendation history this intake changed, from <work>/backup,
+# where an empty marker file stands for a history that did not exist before.
+restore_histories() {  # <work>
+  local saved task
+  for saved in "$1"/backup/*.yaml; do
+    [ -e "$saved" ] || continue
+    task=$(basename -- "$saved" .yaml)
+    if [ -e "$1/backup/$task.absent" ]; then
+      rm -f -- "$TASK_RECS/$task.yaml"
+    else
+      cp -p -- "$saved" "$TASK_RECS/$task.yaml"
+    fi
+  done
+}
+
+# Record the task decisions made on <document> that this home has not recorded
+# yet, refresh tasks.json, and wake firstmate once listing them. Changes no
+# task, hold, or backlog item: firstmate acts on each decision by itself
+# afterwards. Prints one line; returns non-zero with the reason on stderr when
+# the decisions could not be recorded or announced.
+intake_task_decisions() {  # <project> <document>
+  local project=$1 document=$2 work rc kind doc_id task stamp action note
+  local hist count=0 skipped='' listing='' open_ids='' export_ok=1 export_err='' entry digest
+  work=$(mktemp -d "${TMPDIR:-/tmp}/fm-docstrap-decisions.XXXXXX") \
+    || { printf 'error: cannot stage the task decision reading\n' >&2; return 1; }
+  rc=0
+  store_scan "$TASK_STORE" "$document" "$MAX_ANSWER_BYTES" decisions > "$work/scan" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    rm -rf -- "$work"
+    printf 'error: the answer store does not read as a docstrap answer file: %s\n' "$TASK_STORE" >&2
+    return 1
+  fi
+  load_wake_lib || { rm -rf -- "$work"; printf 'error: the wake library is missing\n' >&2; return 1; }
+  mkdir -p "$TASK_RECS" "$work/backup" || { rm -rf -- "$work"; return 1; }
+  fm_lock_acquire_wait "$TASK_DECISIONS_LOCK" \
+    || { rm -rf -- "$work"; printf 'error: cannot take the task decision lock\n' >&2; return 1; }
+
+  while IFS="$TAB" read -r kind doc_id task stamp action note; do
+    [ "$kind" = decision ] || continue
+    case "$task" in ''|.*|*[!A-Za-z0-9._-]*) skipped="$skipped task/$task (not a task id);"; continue ;; esac
+    case " $TASK_ACTIONS " in
+      *" $action "*) [ -n "$action" ] || { skipped="$skipped $task (no action line);"; continue; } ;;
+      *) skipped="$skipped $task (no action line);"; continue ;;
+    esac
+    case "$stamp" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*) ;; *) skipped="$skipped $task (no decision date);"; continue ;; esac
+    hist="$TASK_RECS/$task.yaml"
+    if [ -e "$hist" ]; then
+      rc=0
+      entry=$(S="$stamp" yq '[.[] | select(.by == "captain" and .decided_at == strenv(S))] | length' "$hist" 2>/dev/null) || rc=$?
+      if [ "$rc" -ne 0 ] || [ -z "$entry" ]; then
+        restore_histories "$work"; fm_lock_release "$TASK_DECISIONS_LOCK"; rm -rf -- "$work"
+        printf 'error: cannot read the recommendation history %s\n' "$hist" >&2
+        return 1
+      fi
+      [ "$entry" -eq 0 ] || continue
+      [ -e "$work/backup/$task.yaml" ] || cp -p -- "$hist" "$work/backup/$task.yaml"
+    elif [ ! -e "$work/backup/$task.yaml" ]; then
+      : > "$work/backup/$task.yaml"
+      : > "$work/backup/$task.absent"
+    fi
+    if [ -e "$hist" ]; then cp -p -- "$hist" "$work/next.yaml"; else printf '[]\n' > "$work/next.yaml"; fi
+    if ! A="$action" N="$(decision_note "$note")" D="${stamp:0:10}" S="$stamp" yq -i \
+        '. += [{"action": strenv(A), "note": strenv(N), "date": strenv(D), "by": "captain", "decided_at": strenv(S)}]' \
+        "$work/next.yaml" 2>/dev/null \
+      || ! mv -f -- "$work/next.yaml" "$hist"; then
+      restore_histories "$work"; fm_lock_release "$TASK_DECISIONS_LOCK"; rm -rf -- "$work"
+      printf 'error: cannot record the decision on %s in %s\n' "$task" "$hist" >&2
+      return 1
+    fi
+    printf '%s\t%s\t%s\t%s\n' "$task" "$action" "$stamp" "$note" >> "$work/new"
+    count=$((count + 1))
+  done < "$work/scan"
+
+  if [ "$count" -eq 0 ]; then
+    fm_lock_release "$TASK_DECISIONS_LOCK"
+    rm -rf -- "$work"
+    printf 'read: %s holds no task decision firstmate has not already recorded\n' "$document"
+    [ -z "$skipped" ] || printf 'note: not read as decisions:%s\n' "$skipped" >&2
+    return 0
+  fi
+
+  if "$SCRIPT_DIR/fm-task-export.sh" > "$work/export.out" 2>&1; then
+    open_ids=$(jq -r '.tasks[].id' "$TASK_SITE/docs/triage/tasks.json" 2>/dev/null) || export_ok=0
+  else
+    export_ok=0
+  fi
+  [ "$export_ok" -eq 1 ] || export_err=$(tail -1 "$work/export.out" 2>/dev/null)
+
+  while IFS="$TAB" read -r task action stamp note; do
+    entry="$task $action"
+    if [ "$export_ok" -eq 0 ]; then
+      :
+    elif ! printf '%s\n' "$open_ids" | grep -Fqx -- "$task"; then
+      entry="$entry (task no longer open)"
+    fi
+    [ -z "$note" ] || entry="$entry - $(decision_note "$note" | tr '\n' ' ')"
+    listing="$listing${listing:+; }$entry"
+  done < "$work/new"
+  [ "$export_ok" -eq 1 ] || listing="$listing; tasks.json was not refreshed, so whether each task is still open was not checked: $export_err"
+  digest=$(sha256_file "$work/new" | cut -c1-16)
+
+  if ! fm_wake_append check "task-decisions:$digest" \
+      "check: task decisions from the captain on $document (project $project), recorded as each task's latest recommendation with nothing else changed; act on each one on its own: $listing"; then
+    restore_histories "$work"
+    "$SCRIPT_DIR/fm-task-export.sh" >/dev/null 2>&1 || true
+    fm_lock_release "$TASK_DECISIONS_LOCK"
+    rm -rf -- "$work"
+    printf 'error: firstmate could not be woken, so no task decision was recorded; press answers done again\n' >&2
+    return 1
+  fi
+  fm_lock_release "$TASK_DECISIONS_LOCK"
+  rm -rf -- "$work"
+  printf 'read: %s new task decision(s) on %s reached firstmate\n' "$count" "$document"
+  [ -z "$skipped" ] || printf 'note: not read as decisions:%s\n' "$skipped" >&2
+  if [ "$export_ok" -eq 0 ]; then
+    printf 'error: the task list was not refreshed: %s\n' "$export_err" >&2
+    return 1
+  fi
+  return 0
+}
+
 # Run one armed document's reader once, on the captain's "answers done" notice.
 # The document is named the way docstrap's own store names it, so the match is
 # against this home's private export records: the recorded project-relative
@@ -612,7 +820,7 @@ store_project() {  # <store>
 # firstmate never exported, or one armed in two projects that declare the same
 # key, reads nothing.
 cmd_notice() {
-  local project='' document='' rec sid='' matches=0 out rc=0 durable
+  local project='' document='' rec sid='' matches=0 out rc=0 durable tasks=0 tasks_rc=0
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --project) [ "$#" -ge 2 ] || usage; project=$2; shift 2 ;;
@@ -623,6 +831,11 @@ cmd_notice() {
   [ -n "$project" ] && [ -n "$document" ] || usage
   case "$project$document" in *$'\n'*|*"$TAB"*) die "the notice names a project or document with a control character" ;; esac
 
+  if task_page_matches "$project" "$document"; then
+    tasks=1
+    intake_task_decisions "$project" "$document" || tasks_rc=1
+  fi
+
   for rec in "$MAP_DIR"/docstrap-*.map; do
     [ -f "$rec" ] && [ ! -L "$rec" ] || continue
     [ "$(read_record_field "$rec" schema 2>/dev/null)" = fm-docstrap-map.v1 ] || continue
@@ -632,6 +845,9 @@ cmd_notice() {
     validate_source_id "$sid" || continue
     matches=$((matches + 1))
   done
+  if [ "$matches" -eq 0 ] && [ "$tasks" -eq 1 ]; then
+    return "$tasks_rc"
+  fi
   [ "$matches" -gt 0 ] \
     || die "firstmate asked no questions in $document of project $project, so nothing was read"
   [ "$matches" -eq 1 ] \
@@ -652,13 +868,14 @@ cmd_notice() {
     [ "$(classify_result "$durable")" = answers ] \
       || die "firstmate stopped trusting the answer store and read nothing from it: $(read_record_field "$durable" reason 2>/dev/null || true)"
     printf 'read: the answers to %s reached firstmate\n' "$document"
-    return 0
+    return "$tasks_rc"
   fi
   case "$out" in
     *"no-result: $sid (exit $NOTHING_NEW)"*)
       printf 'read: %s holds no answer firstmate has not already received\n' "$document" ;;
     *) die "firstmate could not read the answers to $document: $(printf '%s\n' "$out" | tail -1)" ;;
   esac
+  return "$tasks_rc"
 }
 
 # --- captured-result commands -----------------------------------------------

@@ -531,4 +531,155 @@ grep -qx 'read: docs/questions.md holds no answer firstmate has not already rece
   || fail "a repeated notice delivered the same answer twice"
 ok "a repeated notice delivers nothing already received"
 
+# --- task tool decisions ------------------------------------------------------
+
+# A page holding docstrap's task tool in this home's own docstrap project. Its
+# "answers done" notice records each new decision in the task's recommendation
+# history, refreshes tasks.json, and wakes firstmate once - through the genuine
+# export, backlog, and wake queue, because those are what the page reads back.
+task_tools_present=1
+for tool in tasks-axi jq yq; do
+  command -v "$tool" >/dev/null 2>&1 || task_tools_present=0
+done
+if [ "$task_tools_present" -eq 0 ]; then
+  printf 'ok - skip: tasks-axi, jq, or yq not found; task decision cases not run\n'
+else
+  THOME="$LAB/taskhome"
+  TSITE="$THOME/data/docstrap"
+  mkdir -p "$THOME/state" "$TSITE/docs/triage" "$LAB/task-store" \
+    "$THOME/data/task-census/recommendations"
+  ln -s "$LAB/task-store" "$TSITE/promdance"
+  TSTORE="$TSITE/promdance/answers.md"
+  printf '# Census\n\n%s{docstrap-tasks} tasks.json\n%s\n' '```' '```' > "$TSITE/docs/triage/census.md"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$THOME/data/backlog.md"
+  tlive() {
+    env -u TASKS_AXI_FILE -u TASKS_AXI_BACKEND -u FM_DATA_OVERRIDE -u FM_STATE_OVERRIDE \
+      FM_HOME="$THOME" "$@"
+  }
+  tlive "$ROOT/bin/fm-tasks-axi.sh" add t-open "an open task" --repo alpha >/dev/null \
+    || fail "could not seed the backlog"
+  tlive "$ROOT/bin/fm-tasks-axi.sh" add t-closed "a finished task" >/dev/null \
+    || fail "could not seed the backlog"
+  tlive "$ROOT/bin/fm-tasks-axi.sh" "done" t-closed >/dev/null || fail "could not close t-closed"
+  printf -- '- action: dispatch\n  note: firstmate thinks it is ready\n  date: "2026-10-01"\n  by: firstmate\n' \
+    > "$THOME/data/task-census/recommendations/t-open.yaml"
+
+  TDOC=01M4TASKTASKTASKTASKTASKTA
+  write_task_store() {  # <rows> <body>
+    {
+      printf -- '---\nstrapdance:\n  kind: answers\n  project: "firstmate"\nanswers:\n'
+      printf '%s\n' "$1"
+      printf -- '---\n\n# Answers\n\n%s\n' "$2"
+    } > "$TSTORE"
+  }
+  write_task_store \
+"  - {key: '$TDOC:task/t-open', document: docs/triage/census.md, label: task/t-open, answered_at: '2026-10-13T09:00:00+00:00', submitted: true, submitted_at: '2026-10-13T09:00:00+00:00'}
+  - {key: '$TDOC:task/t-closed', document: docs/triage/census.md, label: task/t-closed, answered_at: '2026-10-13T09:01:00+00:00', submitted: true, submitted_at: '2026-10-13T09:01:00+00:00'}
+  - {key: '$TDOC:task/t-draft', document: docs/triage/census.md, label: task/t-draft, answered_at: '2026-10-13T09:02:00+00:00', submitted: false, drafted_at: '2026-10-13T09:02:00+00:00'}
+  - {key: '$TDOC:Q1', document: docs/triage/census.md, label: Q1, answered_at: '2026-10-13T09:03:00+00:00', submitted: true, submitted_at: '2026-10-13T09:03:00+00:00'}" \
+"## $TDOC:task/t-open — docs/triage/census.md
+
+action: close-done
+
+Landed in abc123.
+The plan is met.
+
+## $TDOC:task/t-closed — docs/triage/census.md
+
+action: keep
+
+## $TDOC:task/t-draft#draft — docs/triage/census.md (not submitted)
+
+action: hold
+
+## $TDOC:Q1 — docs/triage/census.md
+
+An answer to a question, not a decision."
+
+  store_before=$(cksum < "$TSTORE")
+  backlog_before=$(cksum < "$THOME/data/backlog.md")
+  tlive "$ROOT/bin/fm-procevent-docstrap.sh" notice --project firstmate --document docs/triage/census.md \
+    > "$LAB/task-notice.out" 2>&1 \
+    || fail "the task page notice failed: $(cat "$LAB/task-notice.out")"
+  grep -qx 'read: 2 new task decision(s) on docs/triage/census.md reached firstmate' "$LAB/task-notice.out" \
+    || fail "the task page notice did not report two decisions: $(cat "$LAB/task-notice.out")"
+  [ "$(cksum < "$TSTORE")" = "$store_before" ] || fail "the task page notice modified the answer store"
+  [ "$(cksum < "$THOME/data/backlog.md")" = "$backlog_before" ] \
+    || fail "the task page notice changed the backlog"
+  ok "a task page notice reads its submitted decisions without changing the store or the backlog"
+
+  [ "$(yq -o json -I 0 '.[-1]' "$THOME/data/task-census/recommendations/t-open.yaml")" \
+    = '{"action":"close-done","note":"Landed in abc123.\nThe plan is met.","date":"2026-10-13","by":"captain","decided_at":"2026-10-13T09:00:00+00:00"}' ] \
+    || fail "the decision was not appended to the history: $(cat "$THOME/data/task-census/recommendations/t-open.yaml")"
+  [ "$(yq 'length' "$THOME/data/task-census/recommendations/t-open.yaml")" = 2 ] \
+    || fail "the earlier recommendation was not kept"
+  [ "$(yq -o json -I 0 '.' "$THOME/data/task-census/recommendations/t-closed.yaml")" \
+    = '[{"action":"keep","note":"","date":"2026-10-13","by":"captain","decided_at":"2026-10-13T09:01:00+00:00"}]' ] \
+    || fail "a decision on a task no longer open was not recorded"
+  [ ! -e "$THOME/data/task-census/recommendations/t-draft.yaml" ] || fail "an unsubmitted draft was recorded"
+  [ ! -e "$THOME/data/task-census/recommendations/Q1.yaml" ] || fail "a question answer was recorded as a decision"
+  [ "$(jq -c '.tasks[] | select(.id == "t-open") | .latest_recommendation' "$TSITE/docs/triage/tasks.json")" \
+    = '{"action":"close-done","note":"Landed in abc123.\nThe plan is met.","date":"2026-10-13","by":"captain"}' ] \
+    || fail "tasks.json does not show the decision as the latest recommendation"
+  ok "each new decision is appended to its history by the captain and shown as the latest recommendation"
+
+  [ "$(grep -c 'check: task decisions' "$THOME/state/.wake-queue")" = 1 ] \
+    || fail "the notice did not wake firstmate exactly once: $(cat "$THOME/state/.wake-queue" 2>/dev/null)"
+  wake=$(grep 'check: task decisions' "$THOME/state/.wake-queue")
+  case "$wake" in
+    *"t-open close-done - Landed in abc123. The plan is met."*) ;;
+    *) fail "the wake does not list the open task's decision and note: $wake" ;;
+  esac
+  case "$wake" in
+    *"t-closed keep (task no longer open)"*) ;;
+    *) fail "the wake does not mark the closed task's decision: $wake" ;;
+  esac
+  case "$wake" in *t-draft*|*"An answer to a question"*) fail "the wake listed something that is not a submitted decision: $wake" ;; esac
+  ok "one check wake lists each new decision, marking one on a task no longer open"
+
+  hist_before=$(cksum < "$THOME/data/task-census/recommendations/t-open.yaml")
+  tlive "$ROOT/bin/fm-procevent-docstrap.sh" notice --project firstmate --document docs/triage/census.md \
+    > "$LAB/task-again.out" 2>&1 \
+    || fail "a repeated task page notice failed: $(cat "$LAB/task-again.out")"
+  grep -qx 'read: docs/triage/census.md holds no task decision firstmate has not already recorded' "$LAB/task-again.out" \
+    || fail "a repeated notice did not report nothing new: $(cat "$LAB/task-again.out")"
+  [ "$(cksum < "$THOME/data/task-census/recommendations/t-open.yaml")" = "$hist_before" ] \
+    || fail "a repeated notice recorded a decision twice"
+  [ "$(grep -c 'check: task decisions' "$THOME/state/.wake-queue")" = 1 ] \
+    || fail "a repeated notice woke firstmate again"
+  ok "pressing answers done again with nothing new does nothing"
+
+  # Deciding again supersedes in the store; the history keeps both.
+  write_task_store \
+"  - {key: '$TDOC:task/t-open', document: docs/triage/census.md, label: task/t-open, answered_at: '2026-10-14T08:00:00+00:00', submitted: true, submitted_at: '2026-10-14T08:00:00+00:00'}
+  - {key: '$TDOC:task/t-closed', document: docs/triage/census.md, label: task/t-closed, answered_at: '2026-10-13T09:01:00+00:00', submitted: true, submitted_at: '2026-10-13T09:01:00+00:00'}" \
+"## $TDOC:task/t-open — docs/triage/census.md
+
+action: reshape
+
+## $TDOC:task/t-closed — docs/triage/census.md
+
+action: keep"
+  tlive "$ROOT/bin/fm-procevent-docstrap.sh" notice --project firstmate --document docs/triage/census.md \
+    > "$LAB/task-new.out" 2>&1 \
+    || fail "a notice after a new decision failed: $(cat "$LAB/task-new.out")"
+  grep -qx 'read: 1 new task decision(s) on docs/triage/census.md reached firstmate' "$LAB/task-new.out" \
+    || fail "a superseding decision was not read as one new decision: $(cat "$LAB/task-new.out")"
+  [ "$(jq -r '.tasks[] | select(.id == "t-open") | .latest_recommendation.action' "$TSITE/docs/triage/tasks.json")" = reshape ] \
+    || fail "the superseding decision is not the latest recommendation"
+  [ "$(yq 'length' "$THOME/data/task-census/recommendations/t-open.yaml")" = 3 ] \
+    || fail "the superseding decision did not keep the history"
+  [ "$(grep -c 'check: task decisions' "$THOME/state/.wake-queue")" = 2 ] \
+    || fail "a superseding decision did not wake firstmate once more"
+  ok "a superseding decision is recorded as one new decision and becomes the latest"
+
+  rc=0
+  tlive "$ROOT/bin/fm-procevent-docstrap.sh" notice --project other --document docs/triage/census.md \
+    > "$LAB/task-wrong.out" 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "a task page notice naming another project was accepted"
+  [ "$(grep -c 'check: task decisions' "$THOME/state/.wake-queue")" = 2 ] \
+    || fail "a notice naming another project read the task decisions"
+  ok "a notice naming another project reads no task decision"
+fi
+
 printf '# all fm-procevent-docstrap tests passed\n'
