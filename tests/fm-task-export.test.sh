@@ -97,16 +97,21 @@ done_elsewhere: likely
 done_evidence: abc123 did it
 duplicate_of:
 - t-bare
+lifecycle_stage: branch
+lifecycle_evidence: branch fm/x holds it
+tangle: tangle-x
 recommendation: reshape
 EOF
   touch "$home/data/docstrap/docs/triage/tasks/t-rec.md"
   run_export "$home" || fail "export failed"
 
-  assert_equals '{"unit":"apps/players","last_activity":"2026-10-01","work":"docs+code","stuck":"captain","alignment":"drifted","plan":"docs/plan.md","done_elsewhere":"likely","done_evidence":"abc123 did it","duplicate_of":["t-bare"],"page":"tasks/t-rec"}' \
-    "$(task_field "$home" t-rec '{unit,last_activity,work,stuck,alignment,plan,done_elsewhere,done_evidence,duplicate_of,page}')" \
+  assert_equals '{"unit":"apps/players","last_activity":"2026-10-01","work":"docs+code","stuck":"captain","alignment":"drifted","plan":"docs/plan.md","done_elsewhere":"likely","done_evidence":"abc123 did it","lifecycle_stage":"branch","lifecycle_evidence":"branch fm/x holds it","tangle":"tangle-x","page":"tasks/t-rec"}' \
+    "$(task_field "$home" t-rec '{unit,last_activity,work,stuck,alignment,plan,done_elsewhere,done_evidence,lifecycle_stage,lifecycle_evidence,tangle,page}')" \
     "census fields must come from the record"
-  assert_equals '{"unit":"","last_activity":"","work":"","stuck":"","alignment":"","plan":"","done_elsewhere":"","done_evidence":"","duplicate_of":[],"page":""}' \
-    "$(task_field "$home" t-bare '{unit,last_activity,work,stuck,alignment,plan,done_elsewhere,done_evidence,duplicate_of,page}')" \
+  assert_equals 'false' "$(task_field "$home" t-rec 'has("duplicate_of")')" \
+    "another task's ids must not be exported as a column"
+  assert_equals '{"unit":"","last_activity":"","work":"","stuck":"","alignment":"","plan":"","done_elsewhere":"","done_evidence":"","lifecycle_stage":"","lifecycle_evidence":"","tangle":"","page":""}' \
+    "$(task_field "$home" t-bare '{unit,last_activity,work,stuck,alignment,plan,done_elsewhere,done_evidence,lifecycle_stage,lifecycle_evidence,tangle,page}')" \
     "a task without a record must keep its census fields empty"
   assert_equals 'null' "$(task_field "$home" t-rec .latest_recommendation)" \
     "a record alone must not invent a recommendation history"

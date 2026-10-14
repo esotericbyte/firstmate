@@ -32,8 +32,8 @@
 #   backlog. state is in_flight for an In flight row, else held when the row is
 #   held, else blocked when it has an open blocker, else queued.
 #   unit, last_activity, work, stuck, alignment, plan, done_elsewhere,
-#   done_evidence, and duplicate_of come from the census record. A task with no
-#   record gets "" for each and [] for duplicate_of; nothing is guessed.
+#   done_evidence, lifecycle_stage, lifecycle_evidence, and tangle come from the
+#   census record. A task with no record gets "" for each; nothing is guessed.
 #   page is "tasks/<id>" when <triage>/tasks/<id>.md exists beside the output,
 #   else "".
 #   recommendations is the history list in file order (oldest first), and
@@ -167,7 +167,9 @@ if ! jq -n \
           plan: ($r.plan | str),
           done_elsewhere: ($r.done_elsewhere | str),
           done_evidence: ($r.done_evidence | str),
-          duplicate_of: ($r.duplicate_of | ids),
+          lifecycle_stage: ($r.lifecycle_stage | str),
+          lifecycle_evidence: ($r.lifecycle_evidence | str),
+          tangle: ($r.tangle | str),
           page: (if ($page_ids | index($t.id)) != null then "tasks/\($t.id)" else "" end),
           latest_recommendation: (if ($history | length) == 0 then null
             else ($history | to_entries | max_by([.value.date, .key]) | .value) end),
