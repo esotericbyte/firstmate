@@ -79,6 +79,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Captain preferences and optional shared captain preferences.
 - Learnings, backlog, briefs, scout reports, and the optional per-task no-mistakes pipeline-spend ledger.
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
+- Optional task census records and recommendation histories under `data/task-census/`, which `bin/fm-task-export.sh` merges with the open backlog into docstrap's `data/docstrap/docs/triage/tasks.json`; that script's header owns both formats.
 
 `state/` holds runtime records:
 
