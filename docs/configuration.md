@@ -97,7 +97,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Captain preferences and optional shared captain preferences.
 - Learnings, backlog, briefs, scout reports, optional task status archives, and the optional per-task no-mistakes pipeline-spend ledger.
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
-- Optional task census records and recommendation histories under `data/task-census/`, which `bin/fm-task-export.sh` merges with the open backlog into docstrap's `data/docstrap/docs/triage/tasks.json`; that script's header owns both formats.
+- Optional task census records and recommendation histories under `data/task-census/`, which `bin/fm-task-export.sh` merges with the open backlog into docstrap's `data/docstrap/docs/triage/tasks.json`; that script's header owns both formats, and the captain's task tool decisions are appended to the histories by `bin/fm-procevent-docstrap.sh notice`.
 
 `state/` holds runtime records:
 
@@ -1048,6 +1048,7 @@ An armed question document's answers are read only when the captain presses docs
 docstrap shows that prompt only when its own user config sets `answers_done_command`, an argv list it runs once per press with `--project <project key> --document <document path>` appended, and this home's side of that command is `bin/fm-procevent-docstrap.sh notice`.
 For this home the setting is `answers_done_command: ["<FM_HOME>/bin/fm-procevent-docstrap.sh", "notice"]`, with `<FM_HOME>` spelled as the absolute path of the firstmate home that exported the questions.
 The notice runs the document's reader once, its answers reach their held tasks through the keyed-answer intake, and the command's one-line result or error is what docstrap shows.
+The same press on a page holding docstrap's task tool in this home's `data/docstrap` project needs no exported questions: each new task decision on that page is appended to the task's recommendation history under `data/task-census/` as the captain's, `tasks.json` is refreshed so the page shows it as the latest recommendation, and one notification lists the new decisions for firstmate to act on one at a time, without the notice itself changing any task, hold, or backlog item.
 
 ## Gate defaults (.no-mistakes.yaml)
 
