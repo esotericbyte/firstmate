@@ -18,9 +18,13 @@
 #   recommendations/<id>.yaml  optional recommendation history for task <id>:
 #                              a YAML list of {action, note, date, by}, where
 #                              action is close-done | close-duplicate |
-#                              close-obsolete | reshape | dispatch | hold | ask,
-#                              date is YYYY-MM-DD, and by is firstmate | captain.
-#                              Append a new entry to record a new recommendation.
+#                              close-obsolete | reshape | dispatch | hold | ask |
+#                              keep, date is YYYY-MM-DD, and by is firstmate |
+#                              captain. Append a new entry to record a new
+#                              recommendation. A captain entry taken in from
+#                              docstrap's task tool also carries decided_at,
+#                              which this export does not output (see
+#                              bin/fm-procevent-docstrap.sh, TASK DECISIONS).
 #
 # Per task:
 #   id, title, project (backlog repo, or "none"), filed (backlog created date),
