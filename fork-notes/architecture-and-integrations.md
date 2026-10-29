@@ -128,7 +128,7 @@ Its header owns the mechanics, and traffic is one-way by design.
 
 2.2.2 **The on-demand seam.**
 A small edit to upstream's [`bin/fm-procevent.sh`](../bin/fm-procevent.sh) lets a built-in adapter declare `on-demand`, so reconcile never starts its source and only an explicit start reads it.
-It is the fork's only change to upstream's code logic, and it exists so the docstrap store is read on the captain's notice instead of on a timer ([`go-listener-architecture.md`](go-listener-architecture.md) section 2).
+It and the fork sync in [`bin/fm-update.sh`](../bin/fm-update.sh) (section 2.2.4) are the fork's two changes to upstream's code logic, and the seam exists so the docstrap store is read on the captain's notice instead of on a timer ([`go-listener-architecture.md`](go-listener-architecture.md) section 2).
 
 2.2.3 **The task export.**
 [`bin/fm-task-export.sh`](../bin/fm-task-export.sh) and its test write the open backlog, with census fields and recommendation history, to `tasks.json` in firstmate's docstrap project for docstrap's task tool.
