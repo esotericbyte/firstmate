@@ -1,0 +1,33 @@
+### Adversarial: unpinned latest Pi (the pre-change install line) + pinned TypeScript 5.9.3
+/tmp/fm-nm-npmprefix.wavmXR/latest/lib
+├── @earendil-works/pi-coding-agent@0.74.2
+└── typescript@5.9.3
+
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(93,3): error TS2305: Module '"@earendil-works/pi-coding-agent"' has no exported member 'ModelRuntime'.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(276,7): error TS2322: Type 'true' is not assignable to type 'never'.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(770,39): error TS2551: Property 'getRegisteredProviderIds' does not exist on type 'ModelRegistry'. Did you mean 'registerProvider'?
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(777,42): error TS2339: Property 'getRegisteredProviderConfig' does not exist on type 'ModelRegistry'.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(1334,11): error TS2353: Object literal may only specify known properties, and 'name' does not exist in type 'ExtensionFactory'.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(1719,6): error TS2339: Property 'registerMarkdownTransformer' does not exist on type 'ExtensionAPI'.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(1719,37): error TS7006: Parameter 'markdown' implicitly has an 'any' type.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(1719,47): error TS7006: Parameter 'context' implicitly has an 'any' type.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(1760,11): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '"agent_settled"' is not assignable to parameter of type '"input"'.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(2021,13): error TS2551: Property 'mode' does not exist on type 'ExtensionCommandContext'. Did you mean 'model'?
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(2416,6): error TS2339: Property 'registerEntryRenderer' does not exist on type 'ExtensionAPI'.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(2416,59): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(2416,66): error TS7006: Parameter '_options' implicitly has an 'any' type.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-branch-supervision.ts(2416,76): error TS7006: Parameter 'theme' implicitly has an 'any' type.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-calm.ts(484,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '"agent_settled"' is not assignable to parameter of type '"input"'.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-calm.ts(484,27): error TS7006: Parameter '_event' implicitly has an 'any' type.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-calm.ts(484,35): error TS7006: Parameter 'ctx' implicitly has an 'any' type.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/fm-primary-turnend-guard.ts(603,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '"agent_settled"' is not assignable to parameter of type '"input"'.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/lib/fm-calm-operational-user-layout.ts(101,34): error TS2554: Expected 1-2 arguments, but got 3.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/lib/fm-calm-visibility.ts(90,6): error TS2339: Property 'registerEntryRenderer' does not exist on type 'ExtensionAPI'.
+../../../../../../tmp/fm-pi-primary-types.QyGR7d/lib/fm-calm-visibility.ts(92,6): error TS7006: Parameter 'entry' implicitly has an 'any' type.
+exit=1

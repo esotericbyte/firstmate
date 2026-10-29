@@ -1,0 +1,12 @@
+### npm dist-tags for @earendil-works/pi-coding-agent
+{ 'legacy-node20': '0.74.2', latest: '1.4.0' }
+### Adversarial: Pi 1.2.0 + TypeScript 5.9.3 (what CI got after 2026-10-12)
+/tmp/fm-nm-npmprefix.wavmXR/v12/lib
+├── @earendil-works/pi-coding-agent@1.2.0
+└── typescript@5.9.3
+
+../../../../../../tmp/fm-pi-primary-types.EmMFRb/fm-branch-supervision.ts(1684,26): error TS2339: Property 'prompt' does not exist on type 'BeforeAgentStartEvent'.
+  Property 'prompt' does not exist on type 'BeforeAgentStartCustomEvent'.
+../../../../../../tmp/fm-pi-primary-types.EmMFRb/fm-primary-pi-watch.ts(1203,35): error TS2339: Property 'prompt' does not exist on type 'BeforeAgentStartEvent'.
+  Property 'prompt' does not exist on type 'BeforeAgentStartCustomEvent'.
+exit=1

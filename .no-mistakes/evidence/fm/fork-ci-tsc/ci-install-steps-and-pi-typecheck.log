@@ -1,0 +1,38 @@
+### Baseline: is tsc on PATH before the steps?
+tsc: not found
+### Baseline typecheck test before install:
+skip: Pi extension typecheck prerequisite not found: tsc
+exit=0
+### Step: Install the Pi package for the Pi extension tests (extracted verbatim from ci.yml)
+
+added 122 packages in 7s
+npm notice
+npm notice New minor version of npm available! 11.4.2 -> 11.21.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.21.1
+npm notice To update run: npm install -g npm@11.21.1
+npm notice
+
+added 27 packages, removed 1 package, and changed 92 packages in 3s
+/tmp/fm-nm-npmprefix.wavmXR/g/lib
+└── @earendil-works/pi-coding-agent@1.1.0
+
+step exit=0
+### Step: Install pinned TypeScript (extracted verbatim)
+
+added 1 package in 1s
+Version 5.9.3
+step exit=0
+### All @earendil-works packages installed:
+      1 @earendil-works/chord@1.1.0
+      1 @earendil-works/pi-agent-core@1.1.0
+      1 @earendil-works/pi-ai@1.1.0
+      1 @earendil-works/pi-codemode@1.1.0
+      1 @earendil-works/pi-coding-agent@1.1.0
+      1 @earendil-works/pi-mcp@1.1.0
+      1 @earendil-works/pi-telemetry@1.1.0
+      1 @earendil-works/pi-tui@1.1.0
+### tsc path:
+/tmp/fm-nm-npmprefix.wavmXR/g/bin/tsc
+### tests/fm-pi-primary-types.test.sh after install:
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi unknown
+exit=0
