@@ -1,0 +1,34 @@
+$ bin/fm-doc-audience-check.sh
+fm-doc-audience-check: ok surfaces=120 local_links=736
+exit=0
+
+$ bash tests/fm-documentation-audiences.test.sh
+ok - documentation inventory classifies every maintained prose surface exactly once
+ok - classification, setup routing, and maintained-prose scope fail safely
+ok - required documentation owner pointers cannot silently disappear
+ok - local links resolve while dates, versions, commands, and incident prose remain semantically reviewed
+exit=0
+
+$ ls fork-notes
+README.md
+settings-change-log.md
+upstream-sync.md
+
+$ git grep -n -i promdance; git grep -n go-listener-architecture lifecycles-and-docstrap
+bin/fm-procevent-docstrap.sh:190:TASK_STORE="$TASK_SITE/promdance/answers.md"
+bin/fm-procevent-docstrap.sh:195:PROMDANCE_DIRNAME=promdance
+bin/fm-procevent-docstrap.sh:301:# Walk up for the nearest ancestor carrying a `promdance` entry. That entry is
+bin/fm-procevent-docstrap.sh:302:# the project's own link into its promdance storage, so the nearest one names
+bin/fm-procevent-docstrap.sh:309:    if [ -e "$dir/$PROMDANCE_DIRNAME" ]; then
+bin/fm-procevent-docstrap.sh:1294:    || die "no docstrap project owns $real; it needs an ancestor carrying a $PROMDANCE_DIRNAME entry"
+bin/fm-procevent-docstrap.sh:1295:  store="$project_root/$PROMDANCE_DIRNAME/$STORE_BASENAME"
+bin/fm-procevent-docstrap.sh:1302:    "$PROMDANCE_DIRNAME"/*)
+bin/fm-procevent-docstrap.sh:1303:      die "a question document cannot live under $PROMDANCE_DIRNAME/, which docstrap excludes from a project"
+tests/fm-procevent-docstrap.test.sh:18:STORE_DIR="$LAB/promdance-storage"
+tests/fm-procevent-docstrap.test.sh:31:ln -s "$STORE_DIR" "$PROJECT/$(basename promdance)"
+tests/fm-procevent-docstrap.test.sh:32:STORE="$PROJECT/promdance/answers.md"
+tests/fm-procevent-docstrap.test.sh:453:ln -s "$LIVE/store" "$LIVE/proj/promdance"
+tests/fm-procevent-docstrap.test.sh:463:  printf 'store=%s\n' "$LIVE/proj/promdance/answers.md"
+tests/fm-procevent-docstrap.test.sh:551:  ln -s "$LAB/task-store" "$TSITE/promdance"
+tests/fm-procevent-docstrap.test.sh:552:  TSTORE="$TSITE/promdance/answers.md"
+grep exit=1
