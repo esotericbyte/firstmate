@@ -545,6 +545,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "fork-notes/architecture-and-integrations.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "fork-notes/go-listener-architecture.md",
       "audience": "maintainer-architecture"
     },
