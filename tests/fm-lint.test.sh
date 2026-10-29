@@ -238,6 +238,7 @@ test_canonical_partitions_preserve_full_lint() {
 #   FM_TEST_GIT_MERGE_BASE_OK    1 (default) or 0
 #   FM_TEST_GIT_MERGE_BASE       merge-base value to print when OK
 #   FM_TEST_GIT_DIFF_FILE        path to a file of NUL-separated changed paths
+# Any `git -C` call (the no-Ruby check) succeeds with no output.
 fm_lint_stub_git() {
   local fakebin=$1
   cat > "$fakebin/git" <<'SH'
@@ -269,6 +270,9 @@ case "$*" in
     if [ -n "${FM_TEST_GIT_DIFF_FILE:-}" ] && [ -f "$FM_TEST_GIT_DIFF_FILE" ]; then
       cat "$FM_TEST_GIT_DIFF_FILE"
     fi
+    exit 0
+    ;;
+  "-C "*)
     exit 0
     ;;
   *)
@@ -799,6 +803,7 @@ test_changed_mode_hides_cross_file_codes_that_ci_still_sees() {
   lint="$test_root/bin/fm-lint.sh"
   cp "$LINT" "$lint"
   cp "$ROOT/bin/fm-lint-workflows.sh" "$test_root/bin/"
+  cp "$ROOT/bin/fm-no-ruby-check.sh" "$test_root/bin/"
   cp "$ROOT"/.github/workflows/* "$test_root/.github/workflows/"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$test_root/bin/backends/noop.sh"
   fixture="$test_root/tests/fm-lint-local-exclude-fixture.test.sh"
@@ -1158,6 +1163,10 @@ test_rejects_direct_beads_cli_invocations() {
 #!/usr/bin/env bash
 exit 0
 SH
+  cat > "$tmp/repo/bin/fm-no-ruby-check.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
   cat > "$tmp/repo/bin/backends/noop.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -1166,7 +1175,7 @@ SH
 #!/usr/bin/env bash
 exit 0
 SH
-  chmod +x "$lint_copy" "$tmp/repo/bin/fm-lint-workflows.sh"
+  chmod +x "$lint_copy" "$tmp/repo/bin/fm-lint-workflows.sh" "$tmp/repo/bin/fm-no-ruby-check.sh"
   fm_lint_stub_shellcheck "$fakebin" "$log"
 
   for invocation in \
@@ -1218,6 +1227,33 @@ test_rejects_direct_beads_cli_in_explicit_core_path() {
       "explicit core path did not report the backend-boundary violation: $spelling"
   done
   pass "fm-lint.sh enforces backend purity for explicit core paths"
+}
+
+test_rejects_ruby_uses_in_default_lint() {
+  local tmp fakebin log out rc
+  tmp=$(fm_test_tmproot fm-lint-no-ruby)
+  fakebin=$(fm_fakebin "$tmp")
+  log="$tmp/shellcheck.log"
+  fm_git_init_commit "$tmp/repo"
+  mkdir -p "$tmp/repo/bin/backends" "$tmp/repo/tests" "$tmp/repo/skills"
+  cp "$LINT" "$tmp/repo/bin/fm-lint.sh"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-no-ruby-check.sh" "$tmp/repo/bin/"
+  cat > "$tmp/repo/bin/fm-lint-workflows.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/repo/bin/backends/noop.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/repo/tests/noop.test.sh"
+  printf '%s\n' 'require "yaml"' > "$tmp/repo/skills/read-config.rb"
+  chmod +x "$tmp/repo/bin/fm-lint.sh" "$tmp/repo/bin/fm-lint-workflows.sh"
+  git -C "$tmp/repo" add -A
+  fm_lint_stub_shellcheck "$fakebin" "$log"
+
+  rc=0
+  out=$(cd "$tmp/repo" && CI=true PATH="$fakebin:$PATH" "$tmp/repo/bin/fm-lint.sh" 2>&1) || rc=$?
+  [ "$rc" -eq 1 ] || fail "a Ruby use did not fail the default lint run (exit $rc)"$'\n'"$out"
+  assert_contains "$out" "skills/read-config.rb: tracked Ruby source" "the default lint did not name the Ruby source"
+  pass "fm-lint.sh default lint fails on a Ruby use anywhere in the tracked tree"
 }
 
 test_ignores_ambient_shellcheck_opts() {
@@ -1893,6 +1929,10 @@ test_sidecar_result_exit_reflects_final_status() {
 #!/usr/bin/env bash
 exit 0
 SH
+  cat > "$tmp/repo/bin/fm-no-ruby-check.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
   cat > "$tmp/repo/bin/backends/noop.sh" <<'SH'
 #!/usr/bin/env bash
 exit 0
@@ -1902,7 +1942,7 @@ SH
 exit 0
 SH
   printf '#!/usr/bin/env bash\nbd close fm-example\n' > "$tmp/repo/bin/direct-beads.sh"
-  chmod +x "$tmp/repo/bin/fm-lint.sh" "$tmp/repo/bin/fm-lint-workflows.sh"
+  chmod +x "$tmp/repo/bin/fm-lint.sh" "$tmp/repo/bin/fm-lint-workflows.sh" "$tmp/repo/bin/fm-no-ruby-check.sh"
   fm_lint_stub_shellcheck "$fakebin" "$log"
 
   # Every ShellCheck root passes, then the backend-purity check fails the run:
@@ -2045,6 +2085,7 @@ test_rejects_wrong_shellcheck_version
 test_catches_a_real_lint_defect
 test_rejects_direct_beads_cli_invocations
 test_rejects_direct_beads_cli_in_explicit_core_path
+test_rejects_ruby_uses_in_default_lint
 test_ignores_ambient_shellcheck_opts
 test_clean_fixture_passes
 test_jobs_are_deterministic_and_complete

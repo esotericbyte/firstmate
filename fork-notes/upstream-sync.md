@@ -109,6 +109,23 @@ The one case needing real judgment was a test-number collision where both sides 
 scratch directory; ours moved to a `TF1`-`TF4` family so upstream's number line stays clean and its hunks
 keep applying.
 
+Since then the fork also carries the yq-instead-of-Ruby change, which mirrors upstream PR #6857
+(`fm/upstream-yq-instead-of-ruby`, not expected to be approved soon). It edits these upstream files:
+`tests/fm-ci-workflow.test.sh`, `tests/fm-nm-test-contract.test.sh` and `tests/fm-test-run.test.sh` have
+their Ruby YAML reads edited in place to mikefarah yq v4 piped to `jq`, with each assertion's verdict
+unchanged; `tests/lib.sh` has `fm_require_yq` inserted before the common assertions, replacing the
+per-test Ruby guards; `bin/fm-test-run.sh` has `fm-no-ruby-check.test.sh` inserted into the family list
+and the timing table; `bin/fm-lint.sh` has the no-Ruby check inserted next to the backend-purity check on
+the default and partition paths, with matching header lines edited; `tests/fm-lint.test.sh` has its git
+stub and three fixture repos edited to provide that check, and a wiring test inserted after the
+backend-purity tests; `CONTRIBUTING.md` has two lines on yq and the guard inserted after the
+shared-test-helpers paragraph and the no-Ruby check appended to the lint-definition list; and
+`docs/fm-test-portable-shards.md` has the no-Ruby check added to the lint partitions' check list. It
+adds two fork-only files, `bin/fm-no-ruby-check.sh` and `tests/fm-no-ruby-check.test.sh`. Resolution
+rule: **keep ours** in the three converted tests and `tests/lib.sh` until #6857 lands, then take
+upstream's and keep only the guard and its wiring; any Ruby use a sync brings in elsewhere is rewritten
+with yq, since the guard fails on it.
+
 Never edit upstream's code to satisfy a review. Every such edit is permanent divergence that re-conflicts
 forever. This is also why the integration merge must not go through no-mistakes - reviewing 188 commits of
 someone else's landed work invites exactly that.
