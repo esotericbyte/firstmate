@@ -545,14 +545,6 @@
       "audience": "maintainer-architecture"
     },
     {
-      "path": "fork-notes/go-listener-architecture.md",
-      "audience": "maintainer-architecture"
-    },
-    {
-      "path": "fork-notes/lifecycles-and-docstrap.md",
-      "audience": "maintainer-architecture"
-    },
-    {
       "path": "fork-notes/settings-change-log.md",
       "audience": "maintainer-architecture"
     },
