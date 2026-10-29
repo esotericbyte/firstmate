@@ -142,14 +142,44 @@ jobs:
           set -eu
           npm install -g tasks-axi
           tasks-axi --version
-      # Fork-only, temporary: pinned to 1.1.0, the last Pi the fork's
-      # extensions typecheck against, until the upstream merge brings
-      # 7099556d (#7216) and upstream's own test pinning.
+      # Fork-only, temporary: Pi and every @earendil-works package it pulls in
+      # are pinned to 1.1.0, the last Pi the fork's extensions typecheck
+      # against, until the upstream merge brings 7099556d (#7216) and
+      # upstream's own test pinning. Pi 1.1.0 declares its siblings as ^1.1.0,
+      # so the installed package is reinstalled with exact versions and
+      # overrides; its dev dependencies are dropped so npm can resolve it.
       - name: Install the Pi package for the Pi extension tests
         run: |
           set -eu
           npm install -g @earendil-works/pi-coding-agent@1.1.0
+          cd "$(npm root -g)/@earendil-works/pi-coding-agent"
+          node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            delete pkg.devDependencies;
+            pkg.overrides = pkg.overrides || {};
+            for (const name of Object.keys(pkg.dependencies)) {
+              if (name.startsWith("@earendil-works/")) pkg.dependencies[name] = "1.1.0";
+            }
+            for (const name of ["chord", "pi-agent-core", "pi-ai", "pi-codemode", "pi-mcp", "pi-telemetry", "pi-tui"]) {
+              pkg.overrides["@earendil-works/" + name] = "1.1.0";
+            }
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
+          '
+          npm install --omit=dev --no-package-lock
+          cd - >/dev/null
           npm ls -g --depth 0 @earendil-works/pi-coding-agent
+          if npm ls -g --all --parseable --long 2>/dev/null | grep ':@earendil-works/' | grep -v '@1\.1\.0$'; then
+            echo "::error::an @earendil-works package is not pinned to 1.1.0"
+            exit 1
+          fi
+      # Pi 1.1.0 does not bring tsc with it, so the Pi extension typecheck
+      # gets its compiler from this pinned install.
+      - name: Install pinned TypeScript for the Pi extension typecheck
+        run: |
+          set -eu
+          npm install -g typescript@5.9.3
+          tsc --version
       - name: Run portable parallel shard 1
         run: |
           set -eu
@@ -251,11 +281,44 @@ jobs:
       # Runtime-facing Pi extension probes need the installed public package
       # to avoid capability skips. tests/fm-pi-primary-types.test.sh owns its
       # separate compiler dependencies.
+      # Fork-only, temporary: Pi and every @earendil-works package it pulls in
+      # are pinned to 1.1.0, the last Pi the fork's extensions typecheck
+      # against, until the upstream merge brings 7099556d (#7216) and
+      # upstream's own test pinning. Pi 1.1.0 declares its siblings as ^1.1.0,
+      # so the installed package is reinstalled with exact versions and
+      # overrides; its dev dependencies are dropped so npm can resolve it.
       - name: Install the Pi package for the Pi extension tests
         run: |
           set -eu
-          npm install -g @earendil-works/pi-coding-agent
+          npm install -g @earendil-works/pi-coding-agent@1.1.0
+          cd "$(npm root -g)/@earendil-works/pi-coding-agent"
+          node -e '
+            const fs = require("fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            delete pkg.devDependencies;
+            pkg.overrides = pkg.overrides || {};
+            for (const name of Object.keys(pkg.dependencies)) {
+              if (name.startsWith("@earendil-works/")) pkg.dependencies[name] = "1.1.0";
+            }
+            for (const name of ["chord", "pi-agent-core", "pi-ai", "pi-codemode", "pi-mcp", "pi-telemetry", "pi-tui"]) {
+              pkg.overrides["@earendil-works/" + name] = "1.1.0";
+            }
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
+          '
+          npm install --omit=dev --no-package-lock
+          cd - >/dev/null
           npm ls -g --depth 0 @earendil-works/pi-coding-agent
+          if npm ls -g --all --parseable --long 2>/dev/null | grep ':@earendil-works/' | grep -v '@1\.1\.0$'; then
+            echo "::error::an @earendil-works package is not pinned to 1.1.0"
+            exit 1
+          fi
+      # Pi 1.1.0 does not bring tsc with it, so the Pi extension typecheck
+      # gets its compiler from this pinned install.
+      - name: Install pinned TypeScript for the Pi extension typecheck
+        run: |
+          set -eu
+          npm install -g typescript@5.9.3
+          tsc --version
       - name: Run portable serial shard ${{ matrix.shard }}
         env:
           # job-total rather than a literal, so shrinking or growing the matrix
@@ -266,6 +329,9 @@ jobs:
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
+          # The Pi package and the pinned TypeScript that provides tsc are
+          # installed above, so any missing typecheck prerequisite is a broken
+          # lane, not a valid skip.
           bin/fm-test-run.sh --lane "$FM_SERIAL_LANE" \
             --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-serial-${FM_SERIAL_SHARD}.json"
