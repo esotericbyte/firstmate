@@ -118,11 +118,13 @@ per-test Ruby guards; `bin/fm-test-run.sh` has `fm-no-ruby-check.test.sh` insert
 and the timing table; `bin/fm-lint.sh` has the no-Ruby check inserted next to the backend-purity check on
 the default and partition paths, with matching header lines edited; `tests/fm-lint.test.sh` has its git
 stub and three fixture repos edited to provide that check, and a wiring test inserted after the
-backend-purity tests; and `CONTRIBUTING.md` has two lines on yq and the guard inserted after the
-shared-test-helpers paragraph. It adds two fork-only files, `bin/fm-no-ruby-check.sh` and
-`tests/fm-no-ruby-check.test.sh`. Resolution rule: **keep ours** in the three converted tests and
-`tests/lib.sh` until #6857 lands, then take upstream's and keep only the guard and its wiring; any Ruby
-use a sync brings in elsewhere is rewritten with yq, since the guard fails on it.
+backend-purity tests; `CONTRIBUTING.md` has two lines on yq and the guard inserted after the
+shared-test-helpers paragraph and the no-Ruby check appended to the lint-definition list; and
+`docs/fm-test-portable-shards.md` has the no-Ruby check added to the lint partitions' check list. It
+adds two fork-only files, `bin/fm-no-ruby-check.sh` and `tests/fm-no-ruby-check.test.sh`. Resolution
+rule: **keep ours** in the three converted tests and `tests/lib.sh` until #6857 lands, then take
+upstream's and keep only the guard and its wiring; any Ruby use a sync brings in elsewhere is rewritten
+with yq, since the guard fails on it.
 
 Never edit upstream's code to satisfy a review. Every such edit is permanent divergence that re-conflicts
 forever. This is also why the integration merge must not go through no-mistakes - reviewing 188 commits of
