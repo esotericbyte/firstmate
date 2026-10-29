@@ -1,0 +1,57 @@
+# AGENTS.md append-only merge proof (scratch clone; upstream kunchenguid/firstmate main fetched live)
+
+## 1. Fork AGENTS.md hunks vs merge base b062eb94 (upstream file is 427 lines)
+before (54eaa41):
+@@ -340,0 +341,6 @@ Use the same evidence-first form for objections or clarifying challenges rather
+after  (32e669a):
+@@ -427,0 +428,11 @@ When updating this file, preserve every safety boundary and keep the always-load
+
+## 2. Merge real upstream/main (c9da5523, 163 commits past b062eb94) into 32e669a
+.agents/skills/operational-home-layout/SKILL.md
+Auto-merging .agents/skills/operational-home-layout/SKILL.md
+CONFLICT (content): Merge conflict in .agents/skills/operational-home-layout/SKILL.md
+Auto-merging .agents/skills/process-event-sources/SKILL.md
+Auto-merging .agents/skills/updatefirstmate/SKILL.md
+Auto-merging AGENTS.md
+Auto-merging bin/fm-procevent.sh
+Auto-merging docs/configuration.md
+Auto-merging docs/documentation-audiences.json
+merged AGENTS.md: first 434 lines byte-identical to upstream/main AGENTS.md; only fork hunk:
+@@ -434,0 +435,11 @@ When updating this file, preserve every safety boundary and keep the always-load
+
+## 3. Synthetic upstream rewording section-9 anchor lines (where rule used to be inserted)
+into 54eaa41 (before):
+AGENTS.md
+Auto-merging AGENTS.md
+CONFLICT (content): Merge conflict in AGENTS.md
+into 32e669a (after): exit 0, clean merge
+
+## 4. Synthetic upstream appending at end of AGENTS.md -> conflict expected; §8.1 recipe (take upstream + re-append fork block) resolves:
+AGENTS.md
+Auto-merging AGENTS.md
+CONFLICT (content): Merge conflict in AGENTS.md
+429:Upstream appended a new final paragraph.
+431:## Fork additions
+435:**Never refer to a question without restating it.**
+
+## 5. §8.1 table vs git diff b062eb94..32e669a
+modified:
+.agents/skills/operational-home-layout/SKILL.md
+.agents/skills/process-event-sources/SKILL.md
+.agents/skills/updatefirstmate/SKILL.md
+AGENTS.md
+bin/fm-procevent.sh
+bin/fm-update.sh
+docs/configuration.md
+docs/documentation-audiences.json
+tests/fm-update.test.sh
+new:
+bin/fm-procevent-docstrap.sh
+bin/fm-task-export.sh
+fork-notes/README.md
+fork-notes/go-listener-architecture.md
+fork-notes/lifecycles-and-docstrap.md
+fork-notes/settings-change-log.md
+fork-notes/upstream-sync.md
+tests/fm-procevent-docstrap.test.sh
+tests/fm-task-export.test.sh
