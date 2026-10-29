@@ -109,6 +109,11 @@ The one case needing real judgment was a test-number collision where both sides 
 scratch directory; ours moved to a `TF1`-`TF4` family so upstream's number line stays clean and its hunks
 keep applying.
 
+One fork divergence is temporary and is the exception to keeping both sides: `.github/workflows/ci.yml`
+pins Pi and its `@earendil-works` packages to 1.1.0 and installs pinned TypeScript in both portable lanes.
+When an upstream merge brings 7099556d (#7216) and upstream's own test pinning, take upstream's side and
+drop the fork pin. The fork-only comments in `ci.yml` state the reason.
+
 Never edit upstream's code to satisfy a review. Every such edit is permanent divergence that re-conflicts
 forever. This is also why the integration merge must not go through no-mistakes - reviewing 188 commits of
 someone else's landed work invites exactly that.
