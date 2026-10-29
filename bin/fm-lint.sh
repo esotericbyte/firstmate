@@ -18,7 +18,9 @@
 # every production shell separately as a canonical, source-aware root.
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
 # malformed GitHub workflow, including a self-broken ci.yml, fails locally
-# before merge instead of only failing to run as CI.
+# before merge instead of only failing to run as CI, and runs
+# bin/fm-no-ruby-check.sh so a Ruby use anywhere in the tracked tree fails
+# both CI lint and the local lint.
 #
 # With no explicit paths, the file set and source-following posture depend
 # on context:
@@ -33,7 +35,7 @@
 #     `gh`). That local pass drops --external-sources and excludes SC1091,
 #     SC2034, SC2153, and SC2329. A branch with zero matching changed files
 #     skips ShellCheck and prints a "no changed lint targets" note, then
-#     still runs the backend-purity check and validates workflows.
+#     still runs the backend-purity and no-Ruby checks and validates workflows.
 # Explicit paths always bypass this file-set selection and lint exactly the
 # given paths, matching the same config, without the workflow YAML check.
 # Explicit core bin/ and bin/backends/ scripts still receive the
@@ -52,7 +54,7 @@
 # exposes their actual roots.
 # Partition mode starts with full source-aware analysis, never changed-only
 # or --fast, and does not accept explicit paths. Each partition also runs
-# workflow lint and backend-purity checks, keeping either invocation
+# workflow lint, backend-purity, and no-Ruby checks, keeping either invocation
 # independently useful.
 #
 # With FM_LINT_REQUIRE_BOUNDS=1, which CI sets, every per-root ShellCheck
@@ -474,6 +476,13 @@ fm_lint_usage() {
 fm_lint_run_workflows() {
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
   "$SELF_DIR/fm-lint-workflows.sh"
+}
+
+# Tests and scripts read YAML with yq, never Ruby; explicit paths stay a
+# ShellCheck-only override.
+fm_lint_run_no_ruby() {
+  [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
+  "$SELF_DIR/fm-no-ruby-check.sh" --root "$ROOT"
 }
 
 # Backend adapters belong behind tasks-axi. Keep direct Beads CLI invocations
@@ -938,6 +947,7 @@ if [ "$CHANGED_MODE" -eq 1 ] && [ "$ROOT_COUNT" -eq 0 ]; then
   printf 'fm-lint.sh: no changed lint targets\n'
   overall_rc=0
   fm_lint_run_backend_purity || overall_rc=$?
+  fm_lint_run_no_ruby || overall_rc=$?
   fm_lint_run_workflows || overall_rc=$?
   exit "$overall_rc"
 fi
@@ -1270,6 +1280,12 @@ purity_rc=0
 fm_lint_run_backend_purity || purity_rc=$?
 if [ "$overall_rc" -eq 0 ] && [ "$purity_rc" -ne 0 ]; then
   overall_rc=$purity_rc
+fi
+
+no_ruby_rc=0
+fm_lint_run_no_ruby || no_ruby_rc=$?
+if [ "$overall_rc" -eq 0 ] && [ "$no_ruby_rc" -ne 0 ]; then
+  overall_rc=$no_ruby_rc
 fi
 
 if [ "$overall_rc" -eq 0 ]; then

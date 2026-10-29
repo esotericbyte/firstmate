@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regression tests for bin/fm-no-ruby-check.sh, the guard that keeps Ruby out
-# of firstmate's tooling and tests in favor of yq.
+# of the firstmate repository in favor of yq.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -27,13 +27,6 @@ new_fixture_repo() {
   printf '%s\n' '#!/usr/bin/env bash' 'yq -o=json . config.yml | jq .' >"$repo/tests/clean.test.sh"
   git -C "$repo" add tests
   printf '%s\n' "$repo"
-}
-
-test_repository_has_no_ruby() {
-  local out
-  out=$("$CHECK" 2>&1) || fail "repository contains Ruby uses: $out"
-  assert_contains "$out" "fm-no-ruby-check: ok" "repository check did not report ok"
-  pass "the firstmate repository has no Ruby uses in bin/, tests/, or workflows"
 }
 
 test_clean_fixture_passes() {
@@ -63,11 +56,17 @@ test_ruby_uses_fail() {
   git -C "$repo" add .github
   run_expect_failure ".github/workflows/ci.yml:1:" "$CHECK" --root "$repo"
 
+  repo=$(new_fixture_repo skill)
+  mkdir -p "$repo/skills/tool"
+  printf '%s\n' 'ruby -ryaml -e 1 config.yml' >"$repo/skills/tool/run.sh"
+  git -C "$repo" add skills
+  run_expect_failure "skills/tool/run.sh:1:" "$CHECK" --root "$repo"
+
   repo=$(new_fixture_repo rb-source)
   printf '%s\n' 'require "yaml"' >"$repo/tests/parse.rb"
   git -C "$repo" add tests
   run_expect_failure "tests/parse.rb: tracked Ruby source" "$CHECK" --root "$repo"
-  pass "ruby commands, Ruby setup actions, and tracked .rb files fail naming the location"
+  pass "ruby commands anywhere in the tree, Ruby setup actions, and tracked .rb files fail naming the location"
 }
 
 test_untracked_files_are_ignored() {
@@ -78,7 +77,6 @@ test_untracked_files_are_ignored() {
   pass "untracked files do not fail the check"
 }
 
-test_repository_has_no_ruby
 test_clean_fixture_passes
 test_ruby_uses_fail
 test_untracked_files_are_ignored
