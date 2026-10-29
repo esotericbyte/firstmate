@@ -1,0 +1,78 @@
+### C2: clean feature branch (prose-only change) -> local lint passes, no-Ruby check reports ok
+$ bin/fm-lint.sh
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: local changed-file mode; ShellCheck source following disabled
+fm-lint.sh: no changed lint targets
+fm-no-ruby-check: ok
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 3 workflow files valid
+exit=0
+
+### C3: an upstream sync reintroduces 'ruby -ryaml' in a skill script outside bin/ and tests/
+target: 
+/bin/bash: line 38: : No such file or directory
+On branch feature
+nothing to commit, working tree clean
+$ bin/fm-no-ruby-check.sh
+fm-no-ruby-check: ok
+exit=0
+
+$ bin/fm-lint.sh
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: local changed-file mode; ShellCheck source following disabled
+fm-lint.sh: no changed lint targets
+fm-no-ruby-check: ok
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 3 workflow files valid
+exit=0
+
+### C4: a tracked *.rb file is added
+/bin/bash: line 42: tools/x.rb: No such file or directory
+$ bin/fm-no-ruby-check.sh
+fm-no-ruby-check: Ruby use found; read YAML with yq (fm_require_yq in tests/lib.sh) instead:
+tools/x.rb: tracked Ruby source
+exit=1
+
+### C5: CI workflow gains a setup-ruby step
+$ bin/fm-no-ruby-check.sh
+fm-no-ruby-check: Ruby use found; read YAML with yq (fm_require_yq in tests/lib.sh) instead:
+.github/workflows/ci.yml:40:      - uses: ruby/setup-ruby@v1
+exit=1
+
+### C6: a staged-but-uncommitted edit of a tracked doc says 'gem install' (working tree is scanned)
+$ bin/fm-no-ruby-check.sh
+fm-no-ruby-check: Ruby use found; read YAML with yq (fm_require_yq in tests/lib.sh) instead:
+CONTRIBUTING.md:150:Run gem install foo first.
+exit=1
+
+### C7: an UNTRACKED scratch file containing ruby is ignored
+$ bin/fm-no-ruby-check.sh
+fm-no-ruby-check: ok
+exit=0
+
+### C8: words that merely contain 'ruby' are not flagged (e.g. 'rubyist-free', 'Ruby' capitalized prose)
+$ bin/fm-no-ruby-check.sh
+fm-no-ruby-check: ok
+exit=0
+
+### C3 (re-driven): an upstream sync reintroduces a YAML-parsing 'ruby -ryaml' call in .claude/mods/firstmate-calm/hooks/register.ts (outside bin/ and tests/)
+$ bin/fm-no-ruby-check.sh
+fm-no-ruby-check: Ruby use found; read YAML with yq (fm_require_yq in tests/lib.sh) instead:
+.claude/mods/firstmate-calm/hooks/register.ts:506:# cfg=$(ruby -ryaml -e "puts YAML.load_file(ARGV[0])" x.yml)
+exit=1
+
+$ bin/fm-lint.sh   (local changed-file lint, the pre-push path)
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: local changed-file mode; ShellCheck source following disabled
+fm-lint.sh: no changed lint targets
+fm-no-ruby-check: Ruby use found; read YAML with yq (fm_require_yq in tests/lib.sh) instead:
+.claude/mods/firstmate-calm/hooks/register.ts:506:# cfg=$(ruby -ryaml -e "puts YAML.load_file(ARGV[0])" x.yml)
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 3 workflow files valid
+exit=1
+### C9: CI partition lint (bin/fm-lint.sh --partition 1of40, as ci.yml invokes it) with a Ruby use injected in .claude/mods/firstmate-calm/hooks/register.ts
+$ CI=true bin/fm-lint.sh --partition 1of40
+fm-lint.sh: --partition must be 1of2 or 2of2, got 1of40.
+exit=2
+### C9 (re-driven with a valid partition): CI=true bin/fm-lint.sh --partition 1of2
+(stopped before completion: the full-source ShellCheck partition run took longer than the test step allowed)

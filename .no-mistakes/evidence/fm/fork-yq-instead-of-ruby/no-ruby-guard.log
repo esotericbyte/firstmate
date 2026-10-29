@@ -1,0 +1,4 @@
+### C1: guard on this branch's real tree
+$ bin/fm-no-ruby-check.sh
+fm-no-ruby-check: ok
+exit=0

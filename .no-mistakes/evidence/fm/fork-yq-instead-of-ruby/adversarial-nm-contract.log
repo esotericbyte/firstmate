@@ -1,0 +1,25 @@
+### B: .no-mistakes.yaml commands.test verdicts (pre-change Ruby rule: absent/null/false/"" pass, anything else fails)
+--- unmodified (commands.test absent)
+ok - no-mistakes does not configure commands.test
+exit=0
+--- commands.test: ""
+ok - no-mistakes does not configure commands.test
+exit=0
+--- commands.test: false
+ok - no-mistakes does not configure commands.test
+exit=0
+--- commands.test: null
+ok - no-mistakes does not configure commands.test
+exit=0
+--- commands.test: bin/fm-test-run.sh --all (must FAIL)
+not ok - commands.test must be absent or empty so Test stays intent-targeted; got: "bin/fm-test-run.sh --all"
+exit=1
+--- commands.test: 0 (must FAIL)
+not ok - commands.test must be absent or empty so Test stays intent-targeted; got: 0
+exit=1
+--- commands is a list, not a mapping (no test key)
+ok - no-mistakes does not configure commands.test
+exit=0
+--- empty file
+ok - no-mistakes does not configure commands.test
+exit=0

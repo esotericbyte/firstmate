@@ -1,0 +1,45 @@
+### A1: float timeout (30.0) in ci.yml must still be rejected after yq->JSON
+34:    timeout-minutes: 30
+83:    timeout-minutes: 5
+    timeout-minutes: 30.0
+$ bash tests/fm-ci-workflow.test.sh
+ok - CI matrices cover every executable serial lane and canonical lint root exactly once
+ok - a newer push to one PR supersedes that PR's in-flight CI
+ok - distinct PRs get distinct concurrency groups
+ok - every main push keeps its own group and is never cancelled
+not ok - these CI jobs have no finite hang tripwire:
+exit=1
+
+### A2: cancel-in-progress forced true for pushes must be rejected
+23:  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+23:  cancel-in-progress: true
+$ bash tests/fm-ci-workflow.test.sh
+ok - CI matrices cover every executable serial lane and canonical lint root exactly once
+ok - a newer push to one PR supersedes that PR's in-flight CI
+ok - distinct PRs get distinct concurrency groups
+not ok - push runs must never cancel an in-progress run, got true
+exit=1
+
+### A3: yq missing from PATH -> clear failure naming mikefarah yq v4
+$ env PATH=/tmp/fm-01M64D2A-nopath bash tests/fm-ci-workflow.test.sh
+not ok - could not parse .github/workflows/ci.yml as YAML
+exit=1
+
+### A4: a non-mikefarah yq (python-yq style) is refused
+$ env PATH=/tmp/fm-01M64D2A-fakeyq:/home/johnh/.local/bin:/usr/local/go/bin:/run/user/1002/fnm_multishells/537_1793043788982/bin:/home/johnh/.local/share/fnm:/home/johnh/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/home/johnh/.local/bin:/home/johnh/go/bin:/home/johnh/.cargo/bin:/home/johnh/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin:/mnt/c/Program Files/Meld/:/mnt/c/Program Files/Tailscale/:/Docker/host/bin:/mnt/c/Program Files/WezTerm:/mnt/c/Users/johnl/AppData/Local/Programs/Microsoft VS Code/bin:/mnt/c/Users/johnl/AppData/Local/Programs/Antigravity/bin:/mnt/c/Users/johnl/AppData/Local/Microsoft/WinGet/Packages/Microsoft.Sysinternals.ProcessExplorer_Microsoft.Winget.Source_8wekyb3d8bbwe:/mnt/c/Users/johnl/AppData/Local/Microsoft/WinGet/Packages/Microsoft.Sysinternals.RAMMap_Microsoft.Winget.Source_8wekyb3d8bbwe bash tests/fm-ci-workflow.test.sh
+exit=127
+
+### A3 (re-driven): yq absent from PATH
+$ PATH=<PATH without yq> command -v yq
+(no yq)
+$ PATH=<PATH without yq> bash tests/fm-ci-workflow.test.sh
+not ok - mikefarah yq v4 (https://github.com/mikefarah/yq) is required to parse .github/workflows/ci.yml as YAML
+exit=1
+$ PATH=<PATH without yq> bash tests/fm-nm-test-contract.test.sh
+not ok - mikefarah yq v4 (https://github.com/mikefarah/yq) is required to parse .no-mistakes.yaml for this contract
+exit=1
+
+### A4 (re-driven): a non-mikefarah yq ('yq 3.4.3', python-yq style) first on PATH
+$ PATH=/tmp/fm-01M64D2A-fakeyq:$PATH bash tests/fm-ci-workflow.test.sh
+not ok - mikefarah yq v4 (https://github.com/mikefarah/yq) is required to parse .github/workflows/ci.yml as YAML; found: yq 3.4.3
+exit=1
