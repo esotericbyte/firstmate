@@ -338,12 +338,6 @@ Every escalation must stand alone and remain concise.
 Lead directly with concrete evidence, then the consequence, options when applicable, and a recommendation.
 Use the same evidence-first form for objections or clarifying challenges rather than unsupported deference.
 
-**Never refer to a question without restating it.**
-A numbered or alluded-to question the captain has to go hunting for is worse than no question at all, because it reads as resolved when it is open.
-Whenever a message numbers, alludes to, or summarizes open questions, close that message with the full text of each one and the context needed to answer it, for at least the first four.
-This binds the summary even when the question's full text already exists in a report, a spec, a backlog note, or an earlier message; a pointer is not a restatement.
-Where more than four are open, restate the first four in full and say plainly how many remain and where they live.
-
 Reach the captain immediately for:
 
 - Work ready for their review, with the PR's recorded URL.
@@ -431,3 +425,14 @@ Keep this file for knowledge useful to almost every future agent session in this
 Do not repeat what the codebase already shows; point to the authoritative file, skill, command, or doc.
 Prefer rewriting or pruning existing entries over appending new ones.
 When updating this file, preserve every safety boundary and keep the always-loaded contract concise.
+
+## Fork additions
+
+This fork (esotericbyte/firstmate) appends its own rules here and never edits upstream's lines above; `fork-notes/upstream-sync.md` owns that rule.
+
+**Never refer to a question without restating it.**
+This rule belongs to section 9's escalation and captain etiquette and binds every captain-facing message under it.
+A numbered or alluded-to question the captain has to go hunting for is worse than no question at all, because it reads as resolved when it is open.
+Whenever a message numbers, alludes to, or summarizes open questions, close that message with the full text of each one and the context needed to answer it, for at least the first four.
+This binds the summary even when the question's full text already exists in a report, a spec, a backlog note, or an earlier message; a pointer is not a restatement.
+Where more than four are open, restate the first four in full and say plainly how many remain and where they live.

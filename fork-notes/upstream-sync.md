@@ -104,6 +104,8 @@ operational-home-layout skill since upstream moved that block out of `AGENTS.md`
 four `fork-notes/` files and their classification in `docs/documentation-audiences.json`. Conflicts concentrate in `AGENTS.md`, `docs/configuration.md`, the updatefirstmate skill,
 and `tests/fm-update.test.sh`, because both sides append to the same anchors.
 
+Section 8 owns the append-only rule that keeps the fork's side of those conflicts mechanical, and its table classifies how the fork changes each upstream file.
+
 Resolution rule for all four: **keep both sides.** Upstream's entries keep their position and ours follow.
 The one case needing real judgment was a test-number collision where both sides added a `T12` sharing one
 scratch directory; ours moved to a `TF1`-`TF4` family so upstream's number line stays clean and its hunks
@@ -143,3 +145,43 @@ Rule: in this home, pass `--repo esotericbyte/firstmate` on every PR or issue qu
 bare PR number. Verify a reported PR by its base and head refs, not by its number. `bin/fm-pr-check.sh`
 takes the full URL and records `pr_head=`, which is the identity that actually pins it - use that
 recorded head to confirm you are looking at the same commit you reviewed.
+
+## 8 The fork's changes to upstream files are append-only
+
+**The fork's changes to `AGENTS.md` are append-only, always.**
+Never edit, insert between, or reword upstream's lines.
+Every fork rule goes in the `## Fork additions` section at the very end of `AGENTS.md`, so upstream's text above it stays byte-identical to upstream's own file.
+A fork rule that belongs to one of upstream's sections says so in its own text, as the question-restatement rule names section 9, rather than sitting inside that section.
+The question-restatement rule was once inserted inside section 9, and that insertion is what made the 2026-10 sync conflict there.
+
+The same holds for every other upstream file the fork changes wherever that is practical: append at the end of the file, or in a fork-owned block, rather than inserting into or editing upstream's lines.
+It is not practical where the file's structure decides placement, such as a JSON inventory whose entries must sit inside one array, a shell script whose additions must run before its final lines, or an upstream sentence that enumerates something the fork extends.
+In those cases keep the fork's change to as few hunks as possible and prefer a new file the upstream file merely points at, because a path upstream does not know about cannot conflict.
+
+### 8.1 How the fork changes each upstream file
+
+Measured with `git diff --stat upstream/main...main` and `git diff -U0` against the merge base, at upstream b062eb94.
+Work a conflicted merge through file by file using this classification.
+New means a path upstream does not have, which never conflicts.
+Appended means the fork's lines all follow upstream's last line, so taking upstream's file and re-appending the fork's block resolves any conflict.
+Inserted means the fork adds lines between upstream's lines without changing them, so resolve by taking upstream's file and re-inserting the fork's lines at the same anchors.
+Edited means the fork changes upstream's own lines, so resolve by taking upstream's new wording and re-applying the fork's change to it by hand.
+
+| File | How the fork changes it |
+| --- | --- |
+| `AGENTS.md` | Appended: the `## Fork additions` section at the end. |
+| `.agents/skills/operational-home-layout/SKILL.md` | Inserted: two docstrap layout entries in the home-layout listing. |
+| `.agents/skills/process-event-sources/SKILL.md` | Inserted and edited: a docstrap adapter block, and `bin/fm-procevent-docstrap.sh --help` added to upstream's list of help owners. |
+| `.agents/skills/updatefirstmate/SKILL.md` | Inserted and edited: upstream's description of what the updater does and prints is reworded for fork upstream sync, and the `upstream-sync:` handling lines are inserted. |
+| `bin/fm-procevent.sh` | Inserted: docstrap adapter hooks at four anchors. |
+| `bin/fm-update.sh` | Inserted and edited: upstream's header comment is reworded, and the fork upstream sync code and its report line are inserted. |
+| `docs/configuration.md` | Inserted: docstrap notes at three anchors. |
+| `docs/documentation-audiences.json` | Inserted: the `fork-notes/` entries inside the inventory array, since JSON cannot be appended past its closing bracket. |
+| `tests/fm-update.test.sh` | Inserted: fork-sync helpers and the `TF1`-`TF4` tests. |
+| `bin/fm-procevent-docstrap.sh` | New. |
+| `bin/fm-task-export.sh` | New. |
+| `fork-notes/` (all files) | New. |
+| `tests/fm-procevent-docstrap.test.sh` | New. |
+| `tests/fm-task-export.test.sh` | New. |
+
+When the fork changes another upstream file, add its row here in the same change.
