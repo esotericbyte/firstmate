@@ -6,75 +6,41 @@ deep."
 
 He is right. This note exists so it is mechanical next time.
 
-## 1 The mechanical path, which is almost always the whole answer
+## 1 The model: main mirrors upstream, the fork's changes ride one rebased branch
 
-    bin/fm-update.sh
+`main` on `esotericbyte/firstmate` is an exact copy of upstream `main` and carries no fork commits.
+The fork's own changes live on branch `esotericbyte`, rebased onto upstream `main`.
+The operational home follows that branch through upstream's self-update source: `config/self-update-source` contains `origin esotericbyte`, and `/updatefirstmate` fast-forwards the home from it (`docs/configuration.md` "Self-update source").
+The fork's earlier `bin/fm-update.sh` upstream-sync feature is gone; the self-update source supersedes it.
 
-That is it. On a fork home this advances `origin/main` from upstream before fast-forwarding the local
-checkout, and reports `upstream-sync: synced|current|failed`.
+The fork exists for one reason: the yq replacement of Ruby in the YAML-reading tests, carried as a cherry-pick of upstream PR https://github.com/kunchenguid/firstmate/pull/6857 until upstream merges it.
+When upstream merges that PR, drop the cherry-picked commit at the next rebase.
 
-**The premise that made 2026-09-26 expensive was wrong.** It was believed - stated in the fork-sync
-feature's own commit and repeated in its pull request - that `gh repo sync` is fast-forward only and
-refuses a fork carrying its own commits, so a diverged fork needs a hand-driven merge. It does not.
-`gh repo sync` calls GitHub's merge-upstream API, which **creates a merge commit** when the fork has
-diverged **and the merge is clean**. Refined 2026-09-27 after seeing both outcomes the same day: it
-merged 12 commits in the morning, then refused in the afternoon with "can't sync because there are
-diverging changes" once 22 further upstream commits touched `AGENTS.md` and `docs/configuration.md` -
-two of the eight files this fork diverges in. So the rule is: it merges what it can and refuses a
-conflict. A refusal is the legitimate trigger for section 3, not a bug. Proven the same day: minutes after landing the manual merge, an ordinary `bin/fm-update.sh`
-silently merged 11 further upstream commits into our main and reported `synced`.
+## 2 Keeping the branch current
 
-So the fork does not need a crewmate, a branch, a pull request, or a decision to stay current. It needs
-one command, and the tokens it costs are the tokens of reading six lines of output.
+Refresh `main` from upstream, then rebase `esotericbyte` onto it:
 
-**What to verify afterwards, because the merge is unreviewed.** A clean auto-merge is still a change to
-our own default branch that nobody read:
+    git fetch upstream && git fetch origin
+    git push origin upstream/main:main
+    git rebase upstream/main esotericbyte
 
-    git -C ~/firstmate log --oneline <old-head>..origin/main
-    git -C ~/firstmate diff --stat <upstream-head> origin/main   # fork divergence: expect the files section 5 lists
+Push a dated backup of the old head before replacing it, then replace the branch with a lease:
 
-If divergence has grown beyond the fork's own features, something merged that should not have.
+    git push origin <old-head>:refs/heads/backup/esotericbyte-<date>-pre-rebase
+    git push --force-with-lease=esotericbyte:<old-head> origin esotericbyte
 
-## 2 When the mechanical path refuses
+Verify afterwards that upstream is an ancestor and that the divergence is only what section 4 lists:
 
-GitHub refuses a conflicted merge-upstream, and the sync reports `failed`. That refusal is the only
-legitimate trigger for a hand-driven merge. Everything in section 3 applies only then.
+    git merge-base --is-ancestor upstream/main esotericbyte
+    git diff --stat upstream/main esotericbyte
 
-## 3 Doing a hand-driven merge without the apparatus
+Do it in a plain Claude Code session in a plain clone, not in the firstmate operational home, because every turn inside `~/firstmate` fires the supervision Stop hook and pays a wake-drain-acknowledge cycle that adds no information to a mechanical rebase.
+Not as a firstmate task either, which is the captain's own suggestion: a crewmate's supervision, status protocol, and teardown verification are worth paying for judgment work and add nothing to a mechanical rebase.
+Do not raise a pull request: nobody reviews upstream's already-landed work, and a PR imports a full CI run, an inherited upstream-owner gate, and a merge-authority question.
 
-**Do it in a plain Claude Code session in a plain clone - NOT in the firstmate operational home, and NOT
-as a firstmate task.** This is the captain's own suggestion and it is the single biggest saving available.
+## 3 Two specific traps, each of which cost real time
 
-    git clone git@github.com:esotericbyte/firstmate.git /tmp/fork-merge && cd /tmp/fork-merge
-    git remote add upstream https://github.com/kunchenguid/firstmate
-    git fetch upstream && git merge upstream/main
-
-Why the operational home is the wrong place. Every turn taken inside `~/firstmate` fires the supervision
-Stop hook, so a mechanical merge pays a full wake-drain-acknowledge cycle per turn: read the queue, handle
-the event, run the generation-bound acknowledgement. On 2026-09-26 that machinery fired on stale wakes and
-turn-end signals repeatedly while the only thing happening was a ten-minute lint. None of it added
-information, and each one cost a turn. A clone in `/tmp` has no hooks, no watcher, no lock, and no
-directory guard.
-
-Why running it as a firstmate task is also wrong. Dispatching a crewmate buys supervision, status
-protocol, briefs, and teardown verification. All of that is valuable for work that needs judgment and
-worthless for `git merge`. The supervisor then spends turns supervising a worker doing something the
-supervisor could have done in two commands.
-
-Then push the merge straight to main. **Do not raise a pull request.** A fork maintainer does not review
-upstream's already-merged work; there is nothing to approve and no one to approve it. Raising one on
-2026-09-26 imported three avoidable costs: a full CI run, a decision about an inherited gate that fails
-by design for anyone who is not upstream's owner, and the merge-authority question - which together
-accounted for four of the captain's five interruptions.
-
-## 4 Three specific traps, each of which cost real time
-
-**4.1 Never squash a merge.** The merge tool defaults to squash, and squashing flattens the merge commit
-so upstream stops being an ancestor. Every future merge then re-processes the entire history and conflicts
-on everything. Pass `--merge` explicitly, and verify afterwards that the merge commit still has two
-parents and that `git merge-base --is-ancestor <upstream-head> main` succeeds.
-
-**4.2 Check the GitHub token scope BEFORE starting.** Upstream's merges touch `.github/workflows/`, and
+**3.1 Check the GitHub token scope BEFORE starting.** Upstream's commits touch `.github/workflows/`, and
 pushing those requires the `workflow` scope. Without it the push is refused after all the work is done,
 which is where one captain interruption went. Check first:
 
@@ -83,7 +49,7 @@ which is where one captain interruption went. Check first:
 If it is missing the fix is `gh auth refresh -h github.com -s workflow`, which the captain must run, and
 it preserves existing scopes.
 
-**4.3 Run the lint the way CI runs it, not the way it runs locally.** `bin/fm-lint.sh` in changed-file
+**3.2 Run the lint the way CI runs it, not the way it runs locally.** `bin/fm-lint.sh` in changed-file
 mode **disables SC1091, SC2034, SC2153 and SC2329 entirely** because they need library context. A local
 green is therefore not a weaker CI green - those checks did not run at all. On 2026-09-26 a dead-variable
 SC2034 slipped through exactly this gap, failed CI, and cost a second push plus a ten-minute CI re-run.
@@ -94,41 +60,37 @@ Use CI's own invocation, both partitions:
 
 Each takes about ten minutes. Run them before pushing, not after.
 
-## 5 What the fork actually contains, so divergence stays checkable
+## 4 What the fork actually contains, so divergence stays checkable
 
-Fourteen files, about 2,437 insertions, as of the 2026-10-07 merge of upstream b062eb94. The docstrap
-process-event bridge (`bin/fm-procevent-docstrap.sh` plus its test), the fork-sync feature in
-`bin/fm-update.sh` plus its tests, and the question-restatement rule in `AGENTS.md`, with matching notes
-in `docs/configuration.md` and three skills (the docstrap layout entries live in the
-operational-home-layout skill since upstream moved that block out of `AGENTS.md` section 2), plus the
-four `fork-notes/` files and their classification in `docs/documentation-audiences.json`. Conflicts concentrate in `AGENTS.md`, `docs/configuration.md`, the updatefirstmate skill,
-and `tests/fm-update.test.sh`, because both sides append to the same anchors.
+Eighteen files as of the 2026-10-31 rebase onto upstream bb3e6906.
+The docstrap process-event bridge (`bin/fm-procevent-docstrap.sh` and its hook in `bin/fm-procevent.sh`, plus its test) and the docstrap task export (`bin/fm-task-export.sh` plus its test), with matching notes in `docs/configuration.md` and two skills (the docstrap layout entries live in the operational-home-layout skill since upstream moved that block out of `AGENTS.md` section 2).
+The question-restatement rule in `AGENTS.md`.
+The three `fork-notes/` files and their classification in `docs/documentation-audiences.json`.
+The yq change from upstream PR #6857: `tests/lib.sh`, `tests/fm-ci-workflow.test.sh`, `tests/fm-nm-test-contract.test.sh`, and `tests/fm-test-run.test.sh`.
+Conflicts concentrate in `AGENTS.md` and `docs/configuration.md`, because both sides append to the same anchors.
 
-Resolution rule for all four: **keep both sides.** Upstream's entries keep their position and ours follow.
-The one case needing real judgment was a test-number collision where both sides added a `T12` sharing one
-scratch directory; ours moved to a `TF1`-`TF4` family so upstream's number line stays clean and its hunks
-keep applying.
+Resolution rule: **keep both sides.** Upstream's entries keep their position and ours follow.
 
 One fork divergence is temporary and is the exception to keeping both sides: `.github/workflows/ci.yml`
 pins Pi and its `@earendil-works` packages to 1.1.0 and installs pinned TypeScript in both portable lanes.
-When an upstream merge brings 7099556d (#7216) and upstream's own test pinning, take upstream's side and
-drop the fork pin. The fork-only comments in `ci.yml` state the reason.
+When upstream's own test pinning covers the Pi extension typecheck, take upstream's side and drop the fork
+pin. The fork-only comments in `ci.yml` state the reason.
 
 Never edit upstream's code to satisfy a review. Every such edit is permanent divergence that re-conflicts
-forever. This is also why the integration merge must not go through no-mistakes - reviewing 188 commits of
-someone else's landed work invites exactly that.
+forever. This is also why the rebase must not go through no-mistakes - reviewing someone else's landed work invites
+exactly that.
 
-## 6 The honest cost accounting
+## 5 The honest cost accounting
 
 Seven of the nine numbered questions put to the captain in this stretch were fork-update mechanics, not
 judgment calls he needed to make: the token scope, the inherited gate, the merge method, the merge
-authority, the gate workaround, and the two stale files blocking the fast-forward. Sections 1 and 3 remove
-the first four outright. Section 4 removes the rest.
+authority, the gate workaround, and the two stale files blocking the fast-forward. Section 2 removes
+the first four outright. Section 3 removes the rest.
 
 The residual judgment call is genuinely his and should stay: whether to land at all. Nothing else here
 needed him.
 
-## 7 gh and gh-axi resolve to UPSTREAM in this home - never trust a bare PR number
+## 6 gh and gh-axi resolve to UPSTREAM in this home - never trust a bare PR number
 
 `~/firstmate` has two remotes: `origin` -> `esotericbyte/firstmate` (ours) and `upstream` ->
 `kunchenguid/firstmate`. gh's default repo resolution picks `upstream`. So when the fork-merge worker
