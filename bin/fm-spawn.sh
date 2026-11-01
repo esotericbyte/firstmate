@@ -1477,7 +1477,7 @@ spawn_remote_secondmate() {
   # follows THIS primary's default-branch commit, not the Firstmate copy on that
   # host, so the commit is resolved here and handed over for the host to import
   # and fast-forward to. A skipped sync warns and launches the home unchanged.
-  if sm_primary_head=$(primary_head_commit "$FM_ROOT"); then
+  if sm_primary_head=$(primary_head_commit "$FM_ROOT" "$CONFIG"); then
     if sync_out=$("$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-secondmate-control.sh sync "$id" \
       "$sm_primary_head" </dev/null 2>&1); then
       :
@@ -4093,7 +4093,7 @@ if [ "$KIND" = secondmate ]; then
   # the caller turns this step off (bin/fm-remote-secondmate-control.sh).
   if [ "${FM_SKIP_SECONDMATE_SYNC:-0}" = 1 ]; then
     :
-  elif sm_primary_head=$(primary_head_commit "$FM_ROOT"); then
+  elif sm_primary_head=$(primary_head_commit "$FM_ROOT" "$CONFIG"); then
     sm_ff_out=$(ff_target "$PROJ_ABS" "secondmate $ID" "$sm_primary_head" yes yes "$ID" "$STATE" 2>&1 || true)
     case "$sm_ff_out" in
     *': skipped:'*)
