@@ -691,6 +691,30 @@ test_self_update_source_rewrite_is_skipped() {
   pass "T15 a non-fast-forward self-update source is skipped, never forced"
 }
 
+# --- T16: a primary running on the configured branch itself advances it ------
+test_self_update_source_primary_on_branch() {
+  local w out carry before
+  w=$(new_world t16)
+  add_sm "$w" sm1
+  carry=$(add_fork_carry "$w")
+  before=$(git -C "$w/main" rev-parse HEAD)
+  git -C "$w/main" checkout -q -b carry
+  write_source "$w" "fork carry"
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "firstmate: updated " "a primary on the configured branch was not advanced"
+  assert_equals "$(git -C "$w/main" symbolic-ref --short HEAD)" "carry" "the primary left the configured branch"
+  assert_equals "$(git -C "$w/main" rev-parse HEAD)" "$carry" "the primary did not land on the configured branch"
+  assert_equals "$(git -C "$w/main" rev-parse main)" "$before" "the default branch moved under a primary on the configured branch"
+  assert_equals "$(git -C "$w/sm1" rev-parse HEAD)" "$carry" "a secondmate did not follow the primary's configured branch"
+
+  git -C "$w/main" checkout -q -b fm/elsewhere
+  out=$(run_update "$w")
+  assert_contains "$out" "firstmate: skipped: on fm/elsewhere, expected main" "a primary on another branch was not skipped"
+  pass "T16 a primary running on the configured branch advances that branch, and secondmates follow it"
+}
+
 test_updates_main_and_secondmate
 test_reread_gate_is_instruction_only
 test_bin_only_advance_restarts
@@ -710,5 +734,6 @@ test_primary_update_rebinds_local_watch
 test_self_update_source_follows_branch
 test_self_update_source_refuses_unusable_config
 test_self_update_source_rewrite_is_skipped
+test_self_update_source_primary_on_branch
 
 echo "# all fm-update tests passed"

@@ -3,8 +3,10 @@
 # fm-wake-drain.sh after it empties queued wakes, and by fm-session-start.sh in
 # read-only advisory mode whenever session-lock ownership was not verified.
 # First, always warn if the firstmate primary checkout (FM_ROOT) is on a named
-# non-default branch, because that means firstmate-on-itself work landed in the
-# primary instead of an isolated worktree.
+# branch other than its expected branch (the default branch, or the branch
+# config/self-update-source names; bin/fm-tangle-lib.sh owns that), because that
+# means firstmate-on-itself work landed in the primary instead of an isolated
+# worktree.
 # Then, if the home needs supervision (bin/fm-supervision-lib.sh owns that
 # condition set) and that supervision is not healthy, prints a loud, clearly
 # delimited banner so the agent cannot skim past
@@ -146,19 +148,19 @@ fm_guard_clear_stale_banner() {
 }
 
 # Worktree-tangle alarm, checked FIRST and independent of in-flight tasks: the
-# firstmate PRIMARY checkout (FM_ROOT) must stay on its default branch. If a
+# firstmate PRIMARY checkout (FM_ROOT) must stay on its expected branch. If a
 # crewmate's branch/commits landed here instead of in its own isolated worktree,
 # the primary is stranded on a feature branch - surface it loudly on the very next
 # fleet action, the same way the watcher-down banner does. Scoped to the primary
 # only: detached HEAD (linked worktrees, secondmate homes) never trips this.
-tangle_branch=$(fm_primary_tangle_branch "$FM_ROOT" || true)
+tangle_branch=$(fm_primary_tangle_branch "$FM_ROOT" "$CONFIG" || true)
 if [ -n "$tangle_branch" ]; then
-  tangle_default=$(fm_default_branch "$FM_ROOT" 2>/dev/null || echo main)
+  tangle_default=$(fm_primary_restore_branch "$FM_ROOT" "$CONFIG" 2>/dev/null || echo main)
   trule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
   {
     printf '●%s\n' "$trule"
     printf '●  WORKTREE TANGLE - PRIMARY CHECKOUT IS ON A FEATURE BRANCH\n'
-    printf "●  %s is on '%s', not its default branch '%s'.\n" "$FM_ROOT" "$tangle_branch" "$tangle_default"
+    printf "●  %s is on '%s', not its expected branch '%s'.\n" "$FM_ROOT" "$tangle_branch" "$tangle_default"
     printf '●  A crewmate likely branched/committed in the primary instead of its own worktree.\n'
     printf "●  The work is SAFE on the '%s' ref.\n" "$tangle_branch"
     if [ "$READ_ONLY" -eq 1 ]; then

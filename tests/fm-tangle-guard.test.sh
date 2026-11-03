@@ -120,6 +120,44 @@ test_bootstrap_line() {
   pass "fm-bootstrap: TANGLE problem line fires only for a feature branch and suppresses repair commands in detect-only mode"
 }
 
+# --- GUARD 2c: config/self-update-source branch ----------------------------
+
+# A home whose config/self-update-source names "<remote> <branch>" may run its
+# primary on that branch: it is healthy there as on the default branch, and a
+# tangle elsewhere names the configured branch as the restore target.
+test_self_update_source_branch() {
+  local repo out
+  repo=$(make_repo "$TMP_ROOT/source-repo")
+  mkdir -p "$repo/config"
+  printf '%s\n' "origin carry" > "$repo/config/self-update-source"
+
+  git -C "$repo" checkout -q -B carry
+  out=$(run_guard "$repo")
+  assert_not_contains "$out" "WORKTREE TANGLE" "guard alarmed on the configured self-update branch"
+  out=$(run_bootstrap "$repo" | grep '^TANGLE:' || true)
+  [ -z "$out" ] || fail "bootstrap emitted a TANGLE line on the configured self-update branch: $out"
+
+  git -C "$repo" checkout -q main
+  out=$(run_guard "$repo")
+  assert_not_contains "$out" "WORKTREE TANGLE" "guard alarmed on the default branch with a self-update source"
+
+  git -C "$repo" checkout -q -B fm/tangle-cc3
+  out=$(run_guard "$repo")
+  assert_contains "$out" "WORKTREE TANGLE" "guard did not alarm on a feature branch with a self-update source"
+  assert_contains "$out" "expected branch 'carry'" "guard banner did not name the configured branch"
+  assert_contains "$out" "checkout carry" "guard banner did not restore to the configured branch"
+  out=$(run_bootstrap "$repo" | grep '^TANGLE:' || true)
+  assert_contains "$out" "(expected 'carry')" "bootstrap did not name the configured branch"
+  assert_contains "$out" "checkout carry" "bootstrap did not restore to the configured branch"
+
+  # An unusable file is ignored here (bin/fm-update.sh refuses it separately).
+  printf '%s\n' "nosuchremote carry" > "$repo/config/self-update-source"
+  git -C "$repo" checkout -q carry
+  out=$(run_guard "$repo")
+  assert_contains "$out" "expected branch 'main'" "guard honored a self-update source naming an unknown remote"
+  pass "fm-guard/fm-bootstrap: the configured self-update branch is healthy and named as the restore target"
+}
+
 # --- GUARD 1a: brief isolation assertion ------------------------------------
 
 # The generated ship brief must carry the isolation assertion AHEAD of the
@@ -305,6 +343,7 @@ test_spawn_tmux_window_construction() {
 test_lib_classification
 test_guard_banner
 test_bootstrap_line
+test_self_update_source_branch
 test_brief_assertion_precedes_branch
 test_spawn_isolation_abort
 test_spawn_tmux_window_construction

@@ -11,8 +11,10 @@
 # already exists in this repository and a branch on it (for example a fork
 # branch carrying unmerged fixes on top of upstream). When it is present:
 #   - the primary fetches exactly that branch into refs/remotes/<remote>/<branch>
-#     and fast-forwards to it under the same guards as the origin path;
-#   - local secondmates advance to the primary's resulting default-branch commit
+#     and fast-forwards to it under the same guards as the origin path; the
+#     primary may sit on the default branch or on the local <branch> itself
+#     (bin/fm-tangle-lib.sh's fm_primary_expected_branch owns that choice);
+#   - local secondmates advance to the primary's resulting commit
 #     (the same commit the startup secondmate sync follows), importing it from
 #     the primary first when a standalone clone lacks it;
 #   - a remote secondmate is unchanged: its host runs its own copy of this
@@ -20,9 +22,10 @@
 #     home follows the source only when that code root has the same file.
 # Absent, behaviour is exactly the origin path. A present but unreadable or
 # malformed file, an unknown remote, or an invalid branch name stops the whole
-# update before anything moves; it never falls back to origin. Nothing else
-# reads the file: worker spawns, review diffs, the cleanup landed-work test,
-# lint, and default-branch detection keep using origin. The fast-forward-only
+# update before anything moves; it never falls back to origin. Beyond this
+# command, only the primary's expected branch reads the file (the worktree-tangle
+# guard and the secondmate sync base); worker spawns, review diffs, the cleanup
+# landed-work test, lint, and default-branch detection keep using origin. The fast-forward-only
 # guards still apply, so the named branch must only ever move forward.
 #
 # Local homes are treehouse worktrees or standalone clones; remote routes update
@@ -118,39 +121,19 @@ self_update_source_refuse() {  # <reason>
   exit 1
 }
 
-# Parse config/self-update-source into SELF_UPDATE_REMOTE and SELF_UPDATE_BRANCH.
-# Absent leaves both empty (the origin path); anything present but unusable exits.
+# Parse config/self-update-source into SELF_UPDATE_REMOTE and SELF_UPDATE_BRANCH
+# (bin/fm-tangle-lib.sh owns the parser). Absent leaves both empty (the origin
+# path); anything present but unusable exits.
 read_self_update_source() {
-  local content remote branch extra lines
-  [ -e "$SELF_UPDATE_SOURCE_FILE" ] || [ -L "$SELF_UPDATE_SOURCE_FILE" ] || return 0
-  if [ -L "$SELF_UPDATE_SOURCE_FILE" ] || [ ! -f "$SELF_UPDATE_SOURCE_FILE" ] \
-    || [ ! -r "$SELF_UPDATE_SOURCE_FILE" ]; then
-    self_update_source_refuse "not a readable regular file"
-  fi
-  content=$(cat "$SELF_UPDATE_SOURCE_FILE") || self_update_source_refuse "cannot be read"
-  lines=$(printf '%s\n' "$content" | grep -c '')
-  [ "$lines" -eq 1 ] || self_update_source_refuse "expected exactly one line \"<remote> <branch>\""
-  case "$content" in
-    *[[:cntrl:]]*) self_update_source_refuse "contains a control character" ;;
+  local parsed rc=0
+  parsed=$(fm_self_update_source_parse "$SELF_UPDATE_SOURCE_FILE" "$FM_ROOT") || rc=$?
+  case "$rc" in
+    0) ;;
+    2) return 0 ;;
+    *) self_update_source_refuse "$parsed" ;;
   esac
-  read -r remote branch extra <<EOF
-$content
-EOF
-  if [ -z "$remote" ] || [ -z "$branch" ] || [ -n "$extra" ]; then
-    self_update_source_refuse "expected exactly one line \"<remote> <branch>\""
-  fi
-  case "$remote" in
-    -*|*/*) self_update_source_refuse "invalid remote name '$remote'" ;;
-  esac
-  git -C "$FM_ROOT" remote get-url "$remote" >/dev/null 2>&1 \
-    || self_update_source_refuse "remote '$remote' does not exist in $FM_ROOT"
-  case "$branch" in
-    -*) self_update_source_refuse "invalid branch name '$branch'" ;;
-  esac
-  git check-ref-format "refs/heads/$branch" >/dev/null 2>&1 \
-    || self_update_source_refuse "invalid branch name '$branch'"
-  SELF_UPDATE_REMOTE=$remote
-  SELF_UPDATE_BRANCH=$branch
+  SELF_UPDATE_REMOTE=${parsed%% *}
+  SELF_UPDATE_BRANCH=${parsed#* }
 }
 
 read_self_update_source
@@ -163,7 +146,9 @@ if [ -n "$SELF_UPDATE_REMOTE" ]; then
   primary_base="refs/remotes/$SELF_UPDATE_REMOTE/$SELF_UPDATE_BRANCH"
   if git -C "$FM_ROOT" fetch --quiet --no-tags "$SELF_UPDATE_REMOTE" \
     "+refs/heads/$SELF_UPDATE_BRANCH:$primary_base" 2>/dev/null; then
+    FF_EXPECT_BRANCH=$(fm_primary_expected_branch "$FM_ROOT" "$FM_HOME/config" 2>/dev/null || true)
     ff_target "$FM_ROOT" "firstmate" "$primary_base" no no
+    FF_EXPECT_BRANCH=""
   else
     FF_STATUS="skipped"
     FF_INSTR=""
@@ -258,7 +243,7 @@ fm_ff_after_secondmate_settled() {  # <id> <home> <window> <status> <instr>
 # default-branch commit under a configured self-update source (see header).
 secondmate_base=origin
 if [ -n "$SELF_UPDATE_REMOTE" ]; then
-  if secondmate_base=$(primary_head_commit "$FM_ROOT"); then
+  if secondmate_base=$(primary_head_commit "$FM_ROOT" "$FM_HOME/config"); then
     FF_IMPORT_FROM="$FM_ROOT"
   else
     secondmate_base=""

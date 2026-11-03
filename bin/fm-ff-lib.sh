@@ -43,6 +43,8 @@
 SUB_HOME_MARKER="${SUB_HOME_MARKER:-.fm-secondmate-home}"
 # shellcheck source=bin/fm-secondmate-registry-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-secondmate-registry-lib.sh"
+# shellcheck source=bin/fm-tangle-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-tangle-lib.sh"
 
 # --- helpers ---------------------------------------------------------------
 
@@ -71,9 +73,12 @@ default_branch() {
 # HEAD, so even a primary stranded on a feature branch (the worktree tangle of
 # section 8) still yields the true default-branch tip instead of propagating a
 # stray feature branch to the fleet. Echoes the commit SHA, or returns 1.
+# The commit of the primary's expected branch: the default branch, or the branch
+# a usable <config>/self-update-source names while the primary is on it
+# (bin/fm-tangle-lib.sh's fm_primary_expected_branch owns that choice).
 primary_head_commit() {
-  local root=$1 default
-  default=$(default_branch "$root") || return 1
+  local root=$1 config=${2:-} default
+  default=$(fm_primary_expected_branch "$root" "$config") || return 1
   git -C "$root" rev-parse --verify --quiet "refs/heads/$default^{commit}" 2>/dev/null || return 1
 }
 
@@ -384,6 +389,9 @@ live_secondmate_meta_records() {
 #                  remote home sync uses. /updatefirstmate sets it to the primary
 #                  checkout when config/self-update-source is in use, because no
 #                  origin fetch then refreshes a standalone clone.
+# FF_EXPECT_BRANCH, when the caller sets it, replaces the target's default branch
+# as the branch a non-detached target must be on; /updatefirstmate sets it to the
+# primary's expected branch for the primary only.
 # Guards are identical in both modes: never force/merge/stash; skip a dirty or
 # wrong-branch target and leave its work untouched. An optional secondmate id
 # enables the content-equivalent divergence proof and durable marker described
@@ -391,6 +399,7 @@ live_secondmate_meta_records() {
 FF_STATUS=""
 FF_INSTR=""
 FF_IMPORT_FROM=""
+FF_EXPECT_BRANCH=""
 ff_target() {
   local dir=$1 label=$2 base_mode=$3 allow_detached=${4:-no} ignore_seed_marker=${5:-no}
   local secondmate_id=${6:-} reconciliation_state=${7:-}
@@ -407,10 +416,14 @@ ff_target() {
   fi
 
   local default base cur instr local_rev base_rev before after out
-  default=$(default_branch "$dir") || {
-    echo "$label: skipped: cannot determine default branch"
-    return 0
-  }
+  if [ -n "$FF_EXPECT_BRANCH" ]; then
+    default=$FF_EXPECT_BRANCH
+  else
+    default=$(default_branch "$dir") || {
+      echo "$label: skipped: cannot determine default branch"
+      return 0
+    }
+  fi
 
   # Resolve the fast-forward base from base_mode (see header).
   if [ "$base_mode" = origin ]; then

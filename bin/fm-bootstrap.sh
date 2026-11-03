@@ -52,7 +52,8 @@
 #          Already-live and successfully relaunched secondmates are silent
 #          unless FM_BOOTSTRAP_VERBOSE_FACTS=1 requests BOOTSTRAP_INFO facts.
 #          A TANGLE line means the firstmate primary checkout (FM_ROOT) is stranded
-#          on a feature branch instead of its default branch - a crewmate's work
+#          on a feature branch instead of its expected branch (the default, or the
+#          branch config/self-update-source names) - a crewmate's work
 #          landed in the primary instead of its own worktree; restore it per the line.
 #          A present-but-below-floor tool is OUTDATED, never MISSING: its line
 #          carries the installed version (or "unparseable") and the tool's own
@@ -405,7 +406,7 @@ secondmate_sync() {
   # preserving failed sends as NUDGE_SECONDMATES retry markers.
   [ -d "$STATE" ] || return 0
   local primary_head
-  if ! primary_head=$(primary_head_commit "$FM_ROOT"); then
+  if ! primary_head=$(primary_head_commit "$FM_ROOT" "$CONFIG"); then
     local meta id
     for meta in "$STATE"/*.meta; do
       [ -f "$meta" ] || continue
@@ -1559,11 +1560,11 @@ detect_local_tools() {
 
 detect_local_config() {
   # Worktree-tangle check: the firstmate primary checkout (FM_ROOT) must sit on its
-  # default branch, not a feature branch (see fm-tangle-lib.sh). Scoped to the
+  # expected branch, not a feature branch (see fm-tangle-lib.sh). Scoped to the
   # primary only; detached-HEAD worktrees and secondmate homes never trip it.
-  tangle_branch=$(fm_primary_tangle_branch "$FM_ROOT" 2>/dev/null || true)
+  tangle_branch=$(fm_primary_tangle_branch "$FM_ROOT" "$CONFIG" 2>/dev/null || true)
   if [ -n "$tangle_branch" ]; then
-    tangle_default=$(fm_default_branch "$FM_ROOT" 2>/dev/null || echo main)
+    tangle_default=$(fm_primary_restore_branch "$FM_ROOT" "$CONFIG" 2>/dev/null || echo main)
     if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" = 1 ] && [ "${FM_BOOTSTRAP_LOCKED:-0}" != 1 ]; then
       echo "TANGLE: primary checkout on feature branch '$tangle_branch' (expected '$tangle_default'); the work is safe on that ref - read-only session must leave restore work to the session holding the fleet lock"
     else

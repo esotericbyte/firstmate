@@ -1198,10 +1198,11 @@ It suits a home that runs its own fixes before upstream merges them, by followin
 It holds one line, `<remote> <branch>`, for example `fork carry`, naming a remote that already exists in this repository and a branch on that remote.
 When the file is absent, `/updatefirstmate` fast-forwards from `origin` exactly as before.
 
-When it is present, [`bin/fm-update.sh`](../bin/fm-update.sh) fetches only that branch and fast-forwards the primary to it under the same guards as the origin path: a dirty, off-default, or diverged primary is skipped and left untouched, so the named branch must only ever move forward.
-Local secondmate homes then advance to the primary's resulting default-branch commit, the same commit the startup secondmate sync follows, and a standalone-clone home that lacks that commit imports it from the primary first.
+When it is present, [`bin/fm-update.sh`](../bin/fm-update.sh) fetches only that branch and fast-forwards the primary to it under the same guards as the origin path: a dirty, diverged, or wrong-branch primary is skipped and left untouched, so the named branch must only ever move forward.
+The primary may sit on its default branch or on a local branch of the same name as the configured one; the worktree-tangle guard accepts either, and names the configured branch as the restore target for any other.
+Local secondmate homes then advance to the primary's resulting commit, the same commit the startup secondmate sync follows, and a standalone-clone home that lacks that commit imports it from the primary first.
 A remote secondmate's host runs its own update against its own code root, so a remote home follows the named branch only when that code root has the same file; otherwise it keeps following its own origin.
-Worker spawns, review diffs, the cleanup landed-work test, lint, and default-branch detection keep using `origin`, so work started in this home still branches from, and is judged against, upstream.
+Worker spawns, review diffs, the cleanup landed-work test, lint, and default-branch detection otherwise keep using `origin`, so work started in this home still branches from, and is judged against, upstream.
 An unreadable or malformed file, an unknown remote, or an invalid branch name stops the whole update before anything moves and names the file; it never falls back to `origin`.
 The file is per home and is not inherited by secondmate homes.
 To stop following the branch, remove the file; a primary already ahead of `origin` is then reported as diverged until it is brought back by hand.
@@ -2233,7 +2234,7 @@ An absent required tool with an automated install path reports `MISSING:` with i
 
 **Checkout diagnostics**
 
-Bootstrap also reports a `TANGLE:` line when `FM_ROOT` is on a named non-default branch; follow the printed checkout remediation rather than treating it as an installable tool problem.
+Bootstrap also reports a `TANGLE:` line when `FM_ROOT` is on a named branch other than its default branch or its configured self-update branch; follow the printed checkout remediation rather than treating it as an installable tool problem.
 In a read-only session that did not get the fleet lock, the same line is advisory and omits the checkout command.
 
 **Project refresh at startup**
