@@ -62,8 +62,9 @@ Each takes about ten minutes. Run them before pushing, not after.
 
 ## 4 What the fork actually contains, so divergence stays checkable
 
-Eighteen files as of the 2026-10-31 rebase onto upstream bb3e6906.
+Twenty files as of the 2026-11-03 rebase onto upstream 87f26ac7.
 The docstrap process-event bridge (`bin/fm-procevent-docstrap.sh` and its hook in `bin/fm-procevent.sh`, plus its test) and the docstrap task export (`bin/fm-task-export.sh` plus its test), with matching notes in `docs/configuration.md` and two skills (the docstrap layout entries live in the operational-home-layout skill since upstream moved that block out of `AGENTS.md` section 2).
+Provisional serial duration hints for those two fork tests in `bin/fm-test-run.sh`, with their provenance in `docs/fm-test-portable-shards.md`, so the unmeasured-share coverage guard stays under its limit.
 The question-restatement rule in `AGENTS.md`.
 The three `fork-notes/` files and their classification in `docs/documentation-audiences.json`.
 The yq change from upstream PR #6857: `tests/lib.sh`, `tests/fm-ci-workflow.test.sh`, `tests/fm-nm-test-contract.test.sh`, and `tests/fm-test-run.test.sh`.
